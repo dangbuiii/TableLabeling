@@ -20,11 +20,6 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout(central_widget)
 
-        # Nút mở thư mục ảnh
-        btn_open_folder = QPushButton("📂 Mở thư mục ảnh")
-        btn_open_folder.clicked.connect(self.open_image_folder)
-        layout.addWidget(btn_open_folder)
-
         # Tạo splitter chia làm 2 phần
         self.splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(self.splitter)
@@ -33,6 +28,8 @@ class MainWindow(QMainWindow):
         self.file_list = QListWidget()
         self.file_list.itemClicked.connect(self.load_selected_image)
         self.splitter.addWidget(self.file_list)
+        self.file_list.setMinimumWidth(100)
+        self.file_list.setMaximumWidth(200)
 
         # --- Right: TableEditor ---
         self.editor = TableEditor()
@@ -57,7 +54,12 @@ class MainWindow(QMainWindow):
         export_action = table_menu.addAction("Xuất cấu trúc bảng (JSON)")
         export_action.triggered.connect(self.export_table_label)
 
-        option_menu = menu_bar.addMenu("Tùy chọn")
+        # Menu tùy chọn
+        option_menu = menu_bar.addMenu("Thư mục")
+
+        open_image_folder_action = option_menu.addAction("Chọn thư mục ảnh")
+        open_image_folder_action.triggered.connect(self.open_image_folder)
+
         set_output_dir_action = option_menu.addAction("Chọn thư mục xuất file")
         set_output_dir_action.triggered.connect(self.set_output_directory)
 
@@ -117,7 +119,29 @@ class MainWindow(QMainWindow):
         if full_path:
             self.current_image_name = os.path.basename(full_path)
             self.editor.set_image(full_path)
-            self.editor.create_table(1, 1)  # hoặc cho người dùng chọn rows/cols sau
+            #self.editor.create_table(1, 1)  # hoặc cho người dùng chọn rows/cols sau
+            loaded = self.try_load_table_from_json(self.current_image_name)
+            if not loaded:
+                self.editor.create_table(1, 1)
+
+    def try_load_table_from_json(self, image_name):
+        """
+        Nếu đã chọn output_dir, kiểm tra xem có file JSON tương ứng với ảnh không.
+        Nếu có, gọi editor.import_cells.
+        """
+        if not self.output_dir:
+            return False  # Không có thư mục để tìm file JSON
+
+        json_name = os.path.splitext(image_name)[0] + ".json"
+        json_path = os.path.join(self.output_dir, json_name)
+
+        if os.path.exists(json_path):
+            try:
+                self.editor.import_cells(json_path)
+                return True
+            except Exception as e:
+                QMessageBox.warning(self, "Lỗi", f"Lỗi khi nạp file JSON:\n{str(e)}")
+        return False
 
 
 if __name__ == "__main__":
