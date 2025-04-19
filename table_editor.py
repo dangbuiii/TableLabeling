@@ -13,7 +13,7 @@ class TableEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
-        self.setWindowTitle("Resizable Table with Merge Function")
+        self.setWindowTitle("Table Editor")
 
         self.rect = QRectF(0, 0, 800, 600)  # sẽ được cập nhật theo ảnh
         self.rows = 0
@@ -116,7 +116,7 @@ class TableEditor(QWidget):
 
         data = {
             "cells": [],
-            "header": list(self.header_range)  # Thêm dòng này để xuất thông tin header
+            "header": list(self.header_range)
         }
 
         x_positions = self.get_col_x_positions()
@@ -289,6 +289,19 @@ class TableEditor(QWidget):
             self.cols += 1
             self.update()
 
+    def mark_header_dialog(self):
+        if self.rows == 0:
+            return
+
+        row_start, ok1 = QInputDialog.getInt(self, "Header bắt đầu", "Nhập chỉ số hàng bắt đầu:", 0, 0, self.rows - 1)
+        row_end, ok2 = QInputDialog.getInt(self, "Header kết thúc", "Nhập chỉ số hàng kết thúc:", row_start, row_start,
+                                           self.rows - 1)
+
+        if ok1 and ok2:
+            self.header_range = (row_start, row_end)
+            self.update()
+
+    #Các event
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and self.rows > 0 and self.cols > 0:
             # x, y = event.pos().x(), event.pos().y()
@@ -351,22 +364,18 @@ class TableEditor(QWidget):
             self.setCursor(Qt.ArrowCursor)
 
         if self.dragging_col is not None:
-            # dx = x - self.drag_start_pos.x()
             dx = (event.pos().x() - self.drag_start_pos.x()) / self.scale_factor
             if 0 < self.col_widths[self.dragging_col] + dx < 10000:
                 self.col_widths[self.dragging_col] += dx
                 self.col_widths[self.dragging_col + 1] -= dx
-                # self.drag_start_pos.setX(x)
                 self.drag_start_pos.setX(event.pos().x())
                 self.update()
 
         if self.dragging_row is not None:
-            # dy = y - self.drag_start_pos.y()
             dy = (event.pos().y() - self.drag_start_pos.y()) / self.scale_factor
             if 0 < self.row_heights[self.dragging_row] + dy < 10000:
                 self.row_heights[self.dragging_row] += dy
                 self.row_heights[self.dragging_row + 1] -= dy
-                # self.drag_start_pos.setY(y)
                 self.drag_start_pos.setY(event.pos().y())
                 self.update()
 
@@ -391,19 +400,20 @@ class TableEditor(QWidget):
 
             action = menu.exec_(event.globalPos())
 
-            # Xử lý các hành động
-            if action == merge_action:
-                self.merge_selected_cells()
-            elif action == unmerge_action:
-                self.unmerge_selected_cells()
-            elif action == split_row_action:
-                self.split_row()
-            elif action == split_col_action:
-                self.split_col()
-            elif action == merge_rows_action:
-                self.merge_selected_rows()
-            elif action == merge_cols_action:
-                self.merge_selected_cols()
+            if (r1 == r2) and (c1 == c2): #chỉ chọn 1 ô
+                if action == split_row_action:
+                    self.split_row()
+                elif action == split_col_action:
+                    self.split_col()
+            else:
+                if action == merge_action:
+                    self.merge_selected_cells()
+                elif action == unmerge_action:
+                    self.unmerge_selected_cells()
+                elif action == merge_rows_action:
+                    self.merge_selected_rows()
+                elif action == merge_cols_action:
+                    self.merge_selected_cols()
 
         else:
             create_table_action = menu.addAction("New table")
@@ -417,33 +427,16 @@ class TableEditor(QWidget):
             elif action == mark_header_action:
                 self.mark_header_dialog()
 
-
-    def mark_header_dialog(self):
-        if self.rows == 0:
-            return
-
-        row_start, ok1 = QInputDialog.getInt(self, "Header bắt đầu", "Nhập chỉ số hàng bắt đầu:", 0, 0, self.rows - 1)
-        row_end, ok2 = QInputDialog.getInt(self, "Header kết thúc", "Nhập chỉ số hàng kết thúc:", row_start, row_start,
-                                           self.rows - 1)
-
-        if ok1 and ok2:
-            self.header_range = (row_start, row_end)
-            self.update()
-
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         pen = QPen(Qt.green, 2)
+        pen.setCosmetic(True)
         painter.setPen(pen)
 
         scale = self.scale_factor
 
         if self.background_pixmap:
-            # scaled = self.background_pixmap.scaled(
-            #     int(self.rect.width()), int(self.rect.height()),
-            #     Qt.IgnoreAspectRatio, Qt.SmoothTransformation
-            # )
-            # painter.drawPixmap(self.rect.toRect(), scaled)
             scaled_pixmap = self.background_pixmap.scaled(
                 self.background_pixmap.size() * scale,
                 Qt.IgnoreAspectRatio, Qt.SmoothTransformation
@@ -453,35 +446,44 @@ class TableEditor(QWidget):
         if self.rows == 0 or self.cols == 0:
             return
 
-        # x_positions = self.get_col_x_positions()
-        # y_positions = self.get_row_y_positions()
         x_positions = [x * scale for x in self.get_col_x_positions()]
         y_positions = [y * scale for y in self.get_row_y_positions()]
 
-        # painter.drawRect(self.rect)
-        painter.drawRect(0, 0, int(self.rect.width() * scale), int(self.rect.height() * scale))
-
         drawn_cells = set()
         for (r, c, rs, cs) in self.merged_cells:
-            x = x_positions[c]
-            y = y_positions[r]
-            w = x_positions[c + cs] - x
-            h = y_positions[r + rs] - y
-            painter.drawRect(int(x), int(y), int(w), int(h))
+            x1 = x_positions[c]
+            y1 = y_positions[r]
+            x2 = x_positions[c + cs]
+            y2 = y_positions[r + rs]
+
+            # Vẽ từng cạnh của ô gộp
+            painter.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
+            painter.drawLine(int(x2), int(y1), int(x2), int(y2))  # right
+            painter.drawLine(int(x2), int(y2), int(x1), int(y2))  # bottom
+            painter.drawLine(int(x1), int(y2), int(x1), int(y1))  # left
+
             for i in range(r, r + rs):
                 for j in range(c, c + cs):
                     drawn_cells.add((i, j))
 
+        # Vẽ ô thường (chưa gộp) từng cạnh, không bị trùng
         for row in range(self.rows):
             for col in range(self.cols):
                 if (row, col) in drawn_cells:
                     continue
-                x = x_positions[col]
-                y = y_positions[row]
-                w = x_positions[col + 1] - x
-                h = y_positions[row + 1] - y
-                painter.drawRect(int(x), int(y), int(w), int(h))
 
+                x1 = x_positions[col]
+                y1 = y_positions[row]
+                x2 = x_positions[col + 1]
+                y2 = y_positions[row + 1]
+
+                # Vẽ 4 cạnh đầy đủ
+                painter.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
+                painter.drawLine(int(x2), int(y1), int(x2), int(y2))  # right
+                painter.drawLine(int(x2), int(y2), int(x1), int(y2))  # bottom
+                painter.drawLine(int(x1), int(y2), int(x1), int(y1))  # left
+
+        # Vẽ vùng được chọn (highlight)
         if self.selected_cell_start and self.selected_cell_end:
             r1, c1 = self.selected_cell_start
             r2, c2 = self.selected_cell_end
@@ -497,6 +499,7 @@ class TableEditor(QWidget):
 
             painter.setPen(QPen(Qt.red, 2, Qt.DashLine))
             painter.drawRect(int(x), int(y), int(w), int(h))
+
     def zoom_in(self):
         self.scale_factor *= 1.1
         self.update()
@@ -510,7 +513,6 @@ class TableEditor(QWidget):
             self.zoom_in()
         else:
             self.zoom_out()
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -560,7 +562,6 @@ class MainWindow(QMainWindow):
 
     def zoom_out(self):
         self.editor.zoom_out()
-
 
     def open_image(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Chọn ảnh nền", "", "Image Files (*.png *.jpg *.bmp)")
