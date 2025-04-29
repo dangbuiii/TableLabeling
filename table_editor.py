@@ -13,6 +13,7 @@ class TableEditor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.setWindowTitle("Table Editor")
 
         self.rect = QRectF(0, 0, 800, 600)  # sẽ được cập nhật theo ảnh
@@ -34,6 +35,7 @@ class TableEditor(QWidget):
 
         self.scale_factor = 1.0
         self.header_range = (0, 0)
+        self.show_table = True
 
     def set_image(self, image_path):
         self.background_image_path = image_path
@@ -56,6 +58,7 @@ class TableEditor(QWidget):
         self.merged_cells = set()
         self.selected_cell_start = None
         self.selected_cell_end = None
+        self.header_range = (0,0)
         self.update()
 
     def import_cells(self, filename="table_structure.json"):
@@ -443,6 +446,9 @@ class TableEditor(QWidget):
             )
             painter.drawPixmap(0, 0, scaled_pixmap)
 
+        if not self.show_table:
+            return
+
         if self.rows == 0 or self.cols == 0:
             return
 
@@ -450,11 +456,16 @@ class TableEditor(QWidget):
         y_positions = [y * scale for y in self.get_row_y_positions()]
 
         drawn_cells = set()
+        header_cells = []
+
         for (r, c, rs, cs) in self.merged_cells:
             x1 = x_positions[c]
             y1 = y_positions[r]
             x2 = x_positions[c + cs]
             y2 = y_positions[r + rs]
+
+            if r >= self.header_range[0] and r <= self.header_range[1]:
+                header_cells.append(((x1, y1, x2, y2)))
 
             # Vẽ từng cạnh của ô gộp
             painter.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
@@ -477,11 +488,22 @@ class TableEditor(QWidget):
                 x2 = x_positions[col + 1]
                 y2 = y_positions[row + 1]
 
+                if row >= self.header_range[0] and row <= self.header_range[1]:
+                    header_cells.append(((x1, y1, x2, y2)))
+
                 # Vẽ 4 cạnh đầy đủ
                 painter.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
                 painter.drawLine(int(x2), int(y1), int(x2), int(y2))  # right
                 painter.drawLine(int(x2), int(y2), int(x1), int(y2))  # bottom
                 painter.drawLine(int(x1), int(y2), int(x1), int(y1))  # left
+
+        #Vẽ vùng header:
+        painter.setPen(QPen(Qt.blue, 2))
+        for x1, y1, x2, y2 in header_cells:
+            painter.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
+            painter.drawLine(int(x2), int(y1), int(x2), int(y2))  # right
+            painter.drawLine(int(x2), int(y2), int(x1), int(y2))  # bottom
+            painter.drawLine(int(x1), int(y2), int(x1), int(y1))  # left
 
         # Vẽ vùng được chọn (highlight)
         if self.selected_cell_start and self.selected_cell_end:
@@ -513,6 +535,12 @@ class TableEditor(QWidget):
             self.zoom_in()
         else:
             self.zoom_out()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Space:
+            self.show_table = not self.show_table
+            print("space pressed")
+            self.update()
 
 class MainWindow(QMainWindow):
     def __init__(self):

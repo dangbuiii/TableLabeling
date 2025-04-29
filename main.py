@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
 
         # --- Right: TableEditor ---
         self.editor = TableEditor()
+        self.editor.setFocus()
         self.splitter.addWidget(self.editor)
         self.init_menu()
 
@@ -114,6 +115,16 @@ class MainWindow(QMainWindow):
             self.file_list.addItem(os.path.basename(path))
 
     def load_selected_image(self, item):
+        #Lưu nhãn file hiện tại trước
+        if self.current_image_name and self.output_dir:
+            try:
+                base_name = os.path.splitext(self.current_image_name)[0]
+                file_path = os.path.join(self.output_dir, f"{base_name}.json")
+                self.editor.export_cells(file_path)
+            except Exception as e:
+                QMessageBox.warning(self, "Lỗi", f"Không thể lưu ảnh hiện tại:\n{str(e)}")
+
+
         filename = item.text()
         full_path = next((f for f in self.image_files if os.path.basename(f) == filename), None)
         if full_path:
@@ -142,6 +153,24 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Lỗi", f"Lỗi khi nạp file JSON:\n{str(e)}")
         return False
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Left:
+            self.load_prev_image()
+        elif event.key() == Qt.Key_Right:
+            self.load_next_image()
+
+    def load_prev_image(self):
+        current_row = self.file_list.currentRow()
+        if current_row > 0:
+            self.file_list.setCurrentRow(current_row - 1)
+            self.load_selected_image(self.file_list.currentItem())
+
+    def load_next_image(self):
+        current_row = self.file_list.currentRow()
+        if current_row < self.file_list.count() - 1:
+            self.file_list.setCurrentRow(current_row + 1)
+            self.load_selected_image(self.file_list.currentItem())
 
 
 if __name__ == "__main__":
