@@ -77,10 +77,10 @@ class TableEditor(QWidget):
         self.cols = max_col
 
         # Tính toán chiều cao / chiều rộng từ bbox
-        col_widths = [0] * self.cols
-        row_heights = [0] * self.rows
         col_positions = [float('inf')] * (self.cols + 1)
         row_positions = [float('inf')] * (self.rows + 1)
+        max_bbox_width = 0
+        max_bbox_height = 0
 
         for cell in cells:
             x0, y0, x1, y1 = cell["bbox"]
@@ -91,16 +91,25 @@ class TableEditor(QWidget):
             row_positions[r0] = min(row_positions[r0], y0)
             row_positions[r1 + 1] = min(row_positions[r1 + 1], y1)
 
-        # Tính width, height từng cột, hàng
+            max_bbox_width = max(max_bbox_width, x1)
+            max_bbox_height = max(max_bbox_height, y1)
+
+        # Tính tỷ lệ scale nếu ảnh nhỏ hơn bbox gốc
+        img_w = self.background_pixmap.width()
+        img_h = self.background_pixmap.height()
+        scale_x = img_w / max_bbox_width if max_bbox_width > img_w else 1.0
+        scale_y = img_h / max_bbox_height if max_bbox_height > img_h else 1.0
+
+        # Tính width, height từng cột, hàng có scale
         self.col_widths = []
         self.row_heights = []
 
         for i in range(self.cols):
-            w = col_positions[i + 1] - col_positions[i]
+            w = (col_positions[i + 1] - col_positions[i]) * scale_x
             self.col_widths.append(w)
 
         for j in range(self.rows):
-            h = row_positions[j + 1] - row_positions[j]
+            h = (row_positions[j + 1] - row_positions[j]) * scale_y
             self.row_heights.append(h)
 
         # Dò các ô gộp
@@ -110,6 +119,8 @@ class TableEditor(QWidget):
             if r1 > r0 or c1 > c0:
                 self.merged_cells.add((r0, c0, r1 - r0 + 1, c1 - c0 + 1))
 
+        self.selected_cell_start = None
+        self.selected_cell_end = None
         self.update()
 
     def export_cells(self, filename="table_structure.json"):

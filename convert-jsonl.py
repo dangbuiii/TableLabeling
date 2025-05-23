@@ -69,10 +69,16 @@ def generate_jsonl_from_json(input_dir, output_file):
 
             # Add bbox info
             for cell in label_data.get("cells", []):
-                line["html"]["cell"].append({
-                    "tokens": [],  # Giữ trống vì không chứa text
-                    "bbox": cell["bbox"]
-                })
+                token = cell.get("token", "")
+                if token == "":
+                    line["html"]["cell"].append({
+                        "tokens": []
+                    })
+                else:
+                    line["html"]["cell"].append({
+                        "tokens": ["<b>"] + list(token) + ["</b>"],
+                        "bbox": cell["bbox"]
+                    })
 
             # Generate structure tokens from label_data directly
             token_structure = convert_json_to_token_structure(label_data)
@@ -83,7 +89,7 @@ def generate_jsonl_from_json(input_dir, output_file):
 
 
 # ==== CONFIGURATION ====
-input_dir = "F:\\Data\\detected_tables\\All table\\Label-13-04\\Label-13-04\\All label"
-output_file = "F:\\Data\\detected_tables\\All table\\Label-13-04\\Label-13-04\\label.jsonl"
+input_dir = "F:\\Data\\detected_tables\\All table\\10-5\\1000\\new label 3"
+output_file = "F:\\Data\\detected_tables\\All table\\10-5\\1000\\label3.jsonl"
 
 generate_jsonl_from_json(input_dir, output_file)
