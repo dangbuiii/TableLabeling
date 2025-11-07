@@ -284,38 +284,42 @@ class TableEditor(QWidget):
         self.update()
         self.update_cells()
 
-    def split_row(self):
-        if not self.selected_cells:
+    def split_row(self, n=2):
+        if not self.selected_cells or n < 2:
             return
 
         selected_row = min(c["start_row"] for c in self.selected_cells)
 
-        # Insert a content row
-        self.insert_row_content(selected_row + 1)
+        for _ in range(n - 1):
+            self.insert_row_content(selected_row + 1)
 
-        half = self.row_heights[selected_row] / 2
-        self.row_heights[selected_row] = half
-        self.row_heights.insert(selected_row + 1, half)
-        self.rows += 1
+        total_height = self.row_heights[selected_row]
+        new_height = total_height / n
+        self.row_heights[selected_row] = new_height
+        for i in range(1, n):
+            self.row_heights.insert(selected_row + i, new_height)
 
+        self.rows += n - 1
         self.selected_cells.clear()
         self.update()
         self.update_cells()
 
-    def split_col(self):
-        if not self.selected_cells:
+    def split_col(self, n=2):
+        if not self.selected_cells or n < 2:
             return
 
         selected_col = min(c["start_col"] for c in self.selected_cells)
 
-        # Insert a content column
-        self.insert_col_content(selected_col + 1)
+        for _ in range(n - 1):
+            self.insert_col_content(selected_col + 1)
 
-        half = self.col_widths[selected_col] / 2
-        self.col_widths[selected_col] = half
-        self.col_widths.insert(selected_col + 1, half)
-        self.cols += 1
+        total_width = self.col_widths[selected_col]
+        new_width = total_width / n
+        self.col_widths[selected_col] = new_width
+        for i in range(1, n):
+            self.col_widths.insert(selected_col + i, new_width)
 
+        self.cols += n - 1
         self.selected_cells.clear()
         self.update()
         self.update_cells()
@@ -627,7 +631,6 @@ class TableEditor(QWidget):
         actions = {}
 
         min_row, max_row, min_col, max_col = self.get_selected_bound()
-
         num_rows = max_row - min_row + 1
         num_cols = max_col - min_col + 1
 
@@ -642,53 +645,39 @@ class TableEditor(QWidget):
                 selected_is_merged = True
                 break
 
-        # ---- Check selecting category ----
-        selected_is_col = (
-                min_row == 0 and max_row == len(self.row_heights) - 1
-        )
-        selected_is_row = (
-                min_col == 0 and max_col == len(self.col_widths) - 1
-        )
+        selected_is_col = (min_row == 0 and max_row == len(self.row_heights) - 1)
+        selected_is_row = (min_col == 0 and max_col == len(self.col_widths) - 1)
 
-        # ---- Tạo các action phù hợp ----
         if selected_is_merged:
-            actions["Unmerge cells"] = menu.addAction("Merge cells")
+            actions["Unmerge cells"] = menu.addAction("Unmerge cells")
         elif num_cols > 1 or num_rows > 1:
-            actions["Merge cells"] = menu.addAction("Unmerge cells")
+            actions["Merge cells"] = menu.addAction("Merge cells")
 
+        # ---- Submenu Split row ----
+        if selected_is_row:
+            if num_rows == 1:
+                split_row_menu = menu.addMenu("Split row into")
+                for n in range(2, 11):
+                    act = split_row_menu.addAction(f" {n} rows")
+                    act.triggered.connect(lambda checked, x=n: self.split_row(x))
+            else:
+                actions["Merge rows"] = menu.addAction("Merge rows")
+
+        # ---- Submenu Split column ----
         if selected_is_col:
             if num_cols == 1:
-                actions["Split col"] = menu.addAction("Split into two columns")
+                split_col_menu = menu.addMenu("Split column into")
+                for n in range(2, 11):
+                    act = split_col_menu.addAction(f" {n} columns")
+                    act.triggered.connect(lambda checked, x=n: self.split_col(x))
             else:
-                actions["Merge cols"] = menu.addAction("Merge into one column")
+                actions["Merge cols"] = menu.addAction("Merge cols")
 
-        if selected_is_row:
-            if min_row == 0:
-                actions["Mark header"] = menu.addAction("Mark rows as header")
-            if num_rows == 1:
-                actions["Split row"] = menu.addAction("Split into two rows")
-            else:
-                actions["Merge rows"] = menu.addAction("Merge into one row")
+        if min_row == 0:
+            actions["Mark header"] = menu.addAction("Mark rows as header")
 
-        # ---- Display menu ----
         global_pos = QCursor.pos()
-        action = menu.exec_(global_pos)
-
-        if action:
-            if action == actions.get("Merge cells"):
-                self.merge_selected_cells()
-            elif action == actions.get("Unmerge cells"):
-                self.unmerge_selected_cells()
-            elif action == actions.get("Split row"):
-                self.split_row()
-            elif action == actions.get("Split col"):
-                self.split_col()
-            elif action == actions.get("Merge rows"):
-                self.merge_selected_rows()
-            elif action == actions.get("Merge cols"):
-                self.merge_selected_cols()
-            elif action == actions.get("Mark header"):
-                self.mark_header()
+        menu.exec_(global_pos)
 
     def leaveEvent(self, event):
         while QApplication.overrideCursor() is not None:
