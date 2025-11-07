@@ -1,4 +1,4 @@
-# 🧾 TableLabeling
+# 🧾 TableLabelingV2.0
 
 **TableLabeling** is a graphical tool for creating and editing table annotations in images, developed with **Python** and **PyQt5**.  
 The application helps users easily define table structures, serving tasks such as training table structure recognition models.
@@ -27,4 +27,4 @@ You can install and run the application with the following steps:
 
 3. Create and edit tables in the image using the interactive tools in the interface.
 
-4. Save annotations by selecting Export Labels from the File menu.
+4. Save annotations by selecting Save option.
