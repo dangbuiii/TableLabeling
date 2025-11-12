@@ -424,7 +424,7 @@ class TableEditor(QWidget):
     def import_cells(self, filename="table_structure.json"):
         self.clear_table()
 
-        with open(filename, "r") as f:
+        with open(filename, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
         cells = data.get("cells", [])
@@ -491,8 +491,8 @@ class TableEditor(QWidget):
                 ]
             })
 
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
         print(f"✅ Successfully export label file: {filename}")
 
