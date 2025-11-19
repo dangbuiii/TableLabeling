@@ -653,22 +653,20 @@ class TableEditor(QWidget):
         elif num_cols > 1 or num_rows > 1:
             actions["Merge cells"] = menu.addAction("Merge cells")
 
-        # ---- Submenu Split row ----
         if selected_is_row:
             if num_rows == 1:
                 split_row_menu = menu.addMenu("Split row into")
                 for n in range(2, 11):
-                    act = split_row_menu.addAction(f" {n} rows")
+                    act = split_row_menu.addAction(f"{n} rows")
                     act.triggered.connect(lambda checked, x=n: self.split_row(x))
             else:
                 actions["Merge rows"] = menu.addAction("Merge rows")
 
-        # ---- Submenu Split column ----
         if selected_is_col:
             if num_cols == 1:
                 split_col_menu = menu.addMenu("Split column into")
                 for n in range(2, 11):
-                    act = split_col_menu.addAction(f" {n} columns")
+                    act = split_col_menu.addAction(f"{n} columns")
                     act.triggered.connect(lambda checked, x=n: self.split_col(x))
             else:
                 actions["Merge cols"] = menu.addAction("Merge cols")
@@ -677,7 +675,19 @@ class TableEditor(QWidget):
             actions["Mark header"] = menu.addAction("Mark rows as header")
 
         global_pos = QCursor.pos()
-        menu.exec_(global_pos)
+        action = menu.exec_(global_pos)
+
+        if action:
+            if action == actions.get("Merge cells"):
+                self.merge_selected_cells()
+            elif action == actions.get("Unmerge cells"):
+                self.unmerge_selected_cells()
+            elif action == actions.get("Merge rows"):
+                self.merge_selected_rows()
+            elif action == actions.get("Merge cols"):
+                self.merge_selected_cols()
+            elif action == actions.get("Mark header"):
+                self.mark_header()
 
     def leaveEvent(self, event):
         while QApplication.overrideCursor() is not None:
