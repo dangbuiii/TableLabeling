@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         select_label_action.triggered.connect(self.select_label_folder)
         file_menu.addAction(select_label_action)
 
-        export_action = QAction("Export current table JSON", self)
+        export_action = QAction("Export current table XML", self)
         export_action.triggered.connect(self.export_table_label)
         file_menu.addAction(export_action)
 
@@ -129,6 +129,7 @@ class MainWindow(QMainWindow):
         image_layout.setSpacing(0)
 
         self.table_editor = TableEditor()
+        # TableEditor must implement import_cells_xml / export_cells_xml
         self.table_editor.cellsChanged.connect(self.update_cells_info)
         self.table_editor.cellSelected.connect(self.on_cell_selected)
 
@@ -194,23 +195,11 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.coord_table)
 
         # (c) Cell Content
-        content_group = QGroupBox("Cell Content")
+        content_group = QGroupBox("Empty panel")
         content_group.setFixedWidth(290)
         content_layout = QVBoxLayout(content_group)
         content_layout.setContentsMargins(5, 5, 5, 5)
         content_layout.setSpacing(5)
-
-        self.content_edit = QTextEdit()
-        font = QFont()
-        font.setPointSize(12)
-        self.content_edit.setFont(font)
-
-        self.content_edit.setPlaceholderText("Empty cell")
-        self.content_edit.setStyleSheet("border: 1px solid gray;")
-        self.content_edit.setEnabled(False)
-        content_layout.addWidget(self.content_edit)
-
-        self.content_edit.textChanged.connect(self.update_cell_content)
 
         content_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         right_layout.addWidget(content_group)
@@ -234,7 +223,7 @@ class MainWindow(QMainWindow):
             self.update_file_status()
 
     def select_label_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Label Folder (for JSON)")
+        folder = QFileDialog.getExistingDirectory(self, "Select Label Folder (for XML)")
         if folder:
             self.label_folder = folder
             QMessageBox.information(self, "Label Folder", f"Selected: {folder}")
@@ -250,9 +239,9 @@ class MainWindow(QMainWindow):
                 continue
 
             fname = fname_item.text()
-            json_path = os.path.join(self.label_folder, os.path.splitext(fname)[0] + ".json")
+            xml_path = os.path.join(self.label_folder, os.path.splitext(fname)[0] + ".xml")
 
-            if not os.path.exists(json_path):
+            if not os.path.exists(xml_path):
                 status = FILE_MISSING
             else:
                 prev_status = self.file_status.get(fname, FILE_UNCHECKED)
@@ -318,7 +307,7 @@ class MainWindow(QMainWindow):
         self.image_group.setTitle(item_name)
         self.current_index = row + 1
         self.file_group.setTitle(f"Image Files ({self.current_index}/{self.image_count})")
-        self.try_load_table_from_json(item_name)
+        self.try_load_table_from_xml(item_name)
         self.editor_viewer.fit_editor_to_view()
         self.is_modified = False
 
@@ -356,17 +345,18 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "OCR Error", f"OCR failed:\n{e}")
 
-    def try_load_table_from_json(self, image_name):
+    def try_load_table_from_xml(self, image_name):
         if not self.label_folder:
             return False
-        json_name = os.path.splitext(image_name)[0] + ".json"
-        json_path = os.path.join(self.label_folder, json_name)
-        if os.path.exists(json_path):
+        xml_name = os.path.splitext(image_name)[0] + ".xml"
+        xml_path = os.path.join(self.label_folder, xml_name)
+        if os.path.exists(xml_path):
             try:
-                self.table_editor.import_cells(json_path)
+                # TableEditor must provide import_cells_xml(filename)
+                self.table_editor.import_cells(xml_path)
                 return True
             except Exception as e:
-                QMessageBox.warning(self, "Load error", f"Error loading JSON:\n{e}")
+                QMessageBox.warning(self, "Load error", f"Error loading XML:\n{e}")
         return False
 
     def export_table_label(self):
@@ -377,8 +367,9 @@ class MainWindow(QMainWindow):
             return
 
         base_name = os.path.splitext(self.current_image_name)[0]
-        file_path = os.path.join(self.label_folder, f"{base_name}.json")
+        file_path = os.path.join(self.label_folder, f"{base_name}.xml")
         try:
+            # TableEditor must provide export_cells_xml(filename)
             self.table_editor.export_cells(file_path)
             self.is_modified = False
 
@@ -394,7 +385,7 @@ class MainWindow(QMainWindow):
                     break
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to export JSON:\n{e}")
+            QMessageBox.critical(self, "Error", f"Failed to export XML:\n{e}")
 
     def update_cells_info(self):
         self.is_modified = True
@@ -410,23 +401,11 @@ class MainWindow(QMainWindow):
 
         self.coord_table.resizeRowsToContents()
 
-    def update_cell_content(self):
-        if not hasattr(self, "current_cell") or self.current_cell is None:
-            return
-        new_text = self.content_edit.toPlainText()
-        # update table content
-        r, c = self.current_cell['start_row'], self.current_cell['start_col']
-        self.table_editor.cell_contents[(r, c)] = new_text
-
     def on_cell_selected(self, index):
         if 0 <= index < self.coord_table.rowCount():
             self.coord_table.selectRow(index)
 
         self.current_cell = self.table_editor.get_all_cells()[index]
-        self.content_edit.setEnabled(True)
-        self.content_edit.blockSignals(True)
-        self.content_edit.setPlainText(self.current_cell.get("content", ""))
-        self.content_edit.blockSignals(False)
 
     def on_table_item_clicked(self, row, _):
         self.table_editor.select_cell(row)

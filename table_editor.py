@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import QApplication, QWidget, QMenu
 from PyQt5.QtGui import QPainter, QPen, QPixmap, QColor, QCursor
 from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
-import json
+import xml.etree.ElementTree as ET
+from xml.dom.minidom import Document
 
 
 class TableEditor(QWidget):
@@ -34,9 +35,7 @@ class TableEditor(QWidget):
         self.col_widths = []
         self.row_heights = []
         self.merged_cells = set()
-        self.header_range = (0, 0)
         self.show_table = True
-        self.cell_contents = {}
 
         # Mouse interaction
         self.dragging_col = None
@@ -96,15 +95,12 @@ class TableEditor(QWidget):
                     start_row = end_row = r
                     start_col = end_col = c
 
-                content = self.cell_contents.get((r, c), "")
-
                 cells.append({
                     "bbox": [int(x0), int(y0), int(x1), int(y1)],
                     "start_row": start_row,
                     "end_row": end_row,
                     "start_col": start_col,
                     "end_col": end_col,
-                    "content": content
                 })
 
         return cells
@@ -174,7 +170,6 @@ class TableEditor(QWidget):
         self.row_heights = [self.rect.height() / rows] * rows
         self.merged_cells.clear()
         self.selected_cells = []
-        self.header_range = (0, 0)
         self.update()
         self.update_cells()
 
@@ -185,7 +180,6 @@ class TableEditor(QWidget):
         self.row_heights = []
         self.merged_cells = set()
         self.selected_cells = []
-        self.header_range = (0, 0)
         self.update()
         self.update_cells()
 
@@ -200,8 +194,6 @@ class TableEditor(QWidget):
             return
 
         min_row, max_row, min_col, max_col = self.get_selected_bound()
-
-        self.merge_cell_contents(min_row, min_col, max_row - min_row + 1, max_col - min_col + 1)
 
         new_merge = (min_row, min_col, max_row - min_row + 1, max_col - min_col + 1)
 
@@ -235,7 +227,6 @@ class TableEditor(QWidget):
                 break
 
         if target:
-            self.unmerge_cell_contents(min_row, min_col, max_row - min_row + 1, max_col - min_col + 1)
             self.merged_cells.remove(target)
 
         self.selected_cells.clear()
@@ -249,9 +240,6 @@ class TableEditor(QWidget):
         min_row, max_row, _, _ = self.get_selected_bound()
 
         deleted_rows = list(range(min_row + 1, max_row + 1))
-
-        for row_index in deleted_rows:
-            self.delete_row_content(row_index)
 
         for row_index in deleted_rows:
             self.row_heights[min_row] += self.row_heights[row_index]
@@ -272,9 +260,6 @@ class TableEditor(QWidget):
         deleted_cols = list(range(min_col + 1, max_col + 1))
 
         for col_index in deleted_cols:
-            self.delete_col_content(col_index)
-
-        for col_index in deleted_cols:
             self.col_widths[min_col] += self.col_widths[col_index]
 
         del self.col_widths[min_col + 1:max_col + 1]
@@ -289,9 +274,6 @@ class TableEditor(QWidget):
             return
 
         selected_row = min(c["start_row"] for c in self.selected_cells)
-
-        for _ in range(n - 1):
-            self.insert_row_content(selected_row + 1)
 
         total_height = self.row_heights[selected_row]
         new_height = total_height / n
@@ -310,9 +292,6 @@ class TableEditor(QWidget):
 
         selected_col = min(c["start_col"] for c in self.selected_cells)
 
-        for _ in range(n - 1):
-            self.insert_col_content(selected_col + 1)
-
         total_width = self.col_widths[selected_col]
         new_width = total_width / n
         self.col_widths[selected_col] = new_width
@@ -324,177 +303,309 @@ class TableEditor(QWidget):
         self.update()
         self.update_cells()
 
-    def mark_header(self):
-        if not self.selected_cells:
-            return
-
-        row_start = min(cell["start_row"] for cell in self.selected_cells)
-        row_end = max(cell["end_row"] for cell in self.selected_cells)
-
-        self.header_range = (row_start, row_end)
-        self.update()
-
-    # Table content
-    def merge_cell_contents(self, top_row, left_col, row_span, col_span):
-        merged_texts = []
-
-        for r in range(top_row, top_row + row_span):
-            for c in range(left_col, left_col + col_span):
-                text = self.cell_contents.pop((r, c), "")
-                if text.strip():
-                    merged_texts.append(text)
-
-        final_text = " ".join(merged_texts).strip()
-        if final_text:
-            self.cell_contents[(top_row, left_col)] = final_text
-
-    def unmerge_cell_contents(self, top_row, left_col, row_span, col_span):
-        main_text = self.cell_contents.get((top_row, left_col), "")
-        for r in range(top_row, top_row + row_span):
-            for c in range(left_col, left_col + col_span):
-                self.cell_contents[(r, c)] = ""
-        self.cell_contents[(top_row, left_col)] = main_text
-
-    def insert_row_content(self, index):
-        new_contents = {}
-        for (r, c), text in self.cell_contents.items():
-            if r >= index:
-                new_contents[(r + 1, c)] = text
-            else:
-                new_contents[(r, c)] = text
-        self.cell_contents = new_contents
-
-    def insert_col_content(self, index):
-        new_contents = {}
-        for (r, c), text in self.cell_contents.items():
-            if c >= index:
-                new_contents[(r, c + 1)] = text
-            else:
-                new_contents[(r, c)] = text
-        self.cell_contents = new_contents
-
-    def delete_row_content(self, index):
-        if not self.cell_contents:
-            return
-
-        target_offset = -1 if index > 0 else 1
-        new_contents = {}
-        for (r, c), text in self.cell_contents.items():
-            if r == index:
-                target_row = r + target_offset
-                if target_row >= 0:
-                    old_text = self.cell_contents.get((target_row, c), "")
-                    merged = "\n".join([old_text, text]).strip()
-                    if merged:
-                        new_contents[(target_row, c)] = merged
-                continue
-
-            elif r > index:
-                new_contents[(r - 1, c)] = text
-            else:
-                new_contents[(r, c)] = text
-
-        self.cell_contents = new_contents
-
-    def delete_col_content(self, index):
-        if not self.cell_contents:
-            return
-
-        target_offset = -1 if index > 0 else 1
-
-        new_contents = {}
-        for (r, c), text in self.cell_contents.items():
-            if c == index:
-                target_col = c + target_offset
-                if target_col >= 0:
-                    old_text = self.cell_contents.get((r, target_col), "")
-                    merged = "\n".join([old_text, text]).strip()
-                    if merged:
-                        new_contents[(r, target_col)] = merged
-                continue
-
-            elif c > index:
-                new_contents[(r, c - 1)] = text
-            else:
-                new_contents[(r, c)] = text
-
-        self.cell_contents = new_contents
-
-    # ----------------------- Import / Export -----------------------
-    def import_cells(self, filename="table_structure.json"):
+    def import_cells(self, filename):
         self.clear_table()
 
-        with open(filename, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        tree = ET.parse(filename)
+        root = tree.getroot()
 
-        cells = data.get("cells", [])
-        self.header_range = tuple(data.get("header", [0, 0]))
+        rows = []
+        cols = []
+        merged_cells_boxes = []  # <-- đổi tên rõ ràng
 
-        max_row = max(cell["position"][1] for cell in cells) + 1
-        max_col = max(cell["position"][3] for cell in cells) + 1
-        self.rows, self.cols = max_row, max_col
+        # 1) Đọc tất cả đối tượng trong XML
+        for obj in root.findall("object"):
+            name = obj.findtext("name")
+            bb = obj.find("bndbox")
 
-        col_positions = [float('inf')] * (self.cols + 1)
-        row_positions = [float('inf')] * (self.rows + 1)
-        max_w = max_h = 0
+            xmin = int(bb.findtext("xmin"))
+            ymin = int(bb.findtext("ymin"))
+            xmax = int(bb.findtext("xmax"))
+            ymax = int(bb.findtext("ymax"))
 
-        for cell in cells:
-            x0, y0, x1, y1 = cell["bbox"]
+            box = (xmin, ymin, xmax, ymax)
+
+            if name == "table row":
+                rows.append((ymin, ymax))
+
+            elif name == "table column":
+                cols.append((xmin, xmax))
+
+            elif name == "table spanning cell":  # merged cell
+                merged_cells_boxes.append(box)
+
+        # Sắp xếp để đảm bảo đúng thứ tự
+        rows.sort(key=lambda x: x[0])
+        cols.sort(key=lambda x: x[0])
+
+        self.rows = len(rows)
+        self.cols = len(cols)
+
+        # -----------------------
+        # 2) Tìm vị trí row/col của từng spanning (merged) cell
+        # -----------------------
+        def find_span(cell):
+            cx0, cy0, cx1, cy1 = cell
+
+            # ----- Row start: tìm row có ry0 gần với cy0 -----
+            min_dist = float('inf')
+            r0 = None
+            for i, (ry0, ry1) in enumerate(rows):
+                dist = abs(cy0 - ry0)
+                if dist < min_dist:
+                    min_dist = dist
+                    r0 = i
+
+            # ----- Row end: tìm row có ry1 gần với cy1 -----
+            min_dist = float('inf')
+            r1 = None
+            for i, (ry0, ry1) in enumerate(rows):
+                dist = abs(cy1 - ry1)
+                if dist < min_dist:
+                    min_dist = dist
+                    r1 = i
+
+            # ----- Col start: tìm col có cx0_ gần với cx0 -----
+            min_dist = float('inf')
+            c0 = None
+            for j, (cx0_, cx1_) in enumerate(cols):
+                dist = abs(cx0 - cx0_)
+                if dist < min_dist:
+                    min_dist = dist
+                    c0 = j
+
+            # ----- Col end: tìm col có cx1_ gần với cx1 -----
+            min_dist = float('inf')
+            c1 = None
+            for j, (cx0_, cx1_) in enumerate(cols):
+                dist = abs(cx1 - cx1_)
+                if dist < min_dist:
+                    min_dist = dist
+                    c1 = j
+
+            return r0, r1, c0, c1
+
+        # -----------------------
+        # 3) Tạo danh sách span_cells (danh sách ô có span)
+        # -----------------------
+        # KHÔNG để max_w, max_h bị ảnh hưởng bởi merged cells
+        max_w = cols[-1][1]  # chiều rộng grid
+        max_h = rows[-1][1]  # chiều cao grid
+
+        # vẫn tạo span_cells như bình thường
+        span_cells = []
+        for box in merged_cells_boxes:
+            r0, r1, c0, c1 = find_span(box)
+            if r0 is None or c0 is None:
+                continue
+            span_cells.append({
+                "bbox": box,
+                "position": [r0, r1, c0, c1],
+                "token": [""]
+            })
+
+        # -----------------------
+        # 4) Xây dựng col_widths & row_heights
+        # -----------------------
+        col_positions = [c[0] for c in cols] + [cols[-1][1]]
+        row_positions = [r[0] for r in rows] + [rows[-1][1]]
+
+        img_w = self.background_pixmap.width()
+        img_h = self.background_pixmap.height()
+
+        scale_x = img_w / max_w if max_w > 0 else 1
+        scale_y = img_h / max_h if max_h > 0 else 1
+
+        self.col_widths = [(col_positions[i + 1] - col_positions[i]) * scale_x
+                           for i in range(self.cols)]
+        self.row_heights = [(row_positions[j + 1] - row_positions[j]) * scale_y
+                            for j in range(self.rows)]
+
+        # -----------------------
+        # 5) Gán merged cells vào bảng
+        # -----------------------
+        for cell in span_cells:
             r0, r1, c0, c1 = cell["position"]
-            col_positions[c0] = min(col_positions[c0], x0)
-            col_positions[c1 + 1] = min(col_positions[c1 + 1], x1)
-            row_positions[r0] = min(row_positions[r0], y0)
-            row_positions[r1 + 1] = min(row_positions[r1 + 1], y1)
-            max_w, max_h = max(max_w, x1), max(max_h, y1)
 
-            content = ""
-            if "token" in cell and cell["token"]:
-                content = cell["token"][0]
-            self.cell_contents[(r0, c0)] = content
-
-        img_w, img_h = self.background_pixmap.width(), self.background_pixmap.height()
-        scale_x = img_w / max_w if max_w > img_w else 1.0
-        scale_y = img_h / max_h if max_h > img_h else 1.0
-
-        self.col_widths = [(col_positions[i + 1] - col_positions[i]) * scale_x for i in range(self.cols)]
-        self.row_heights = [(row_positions[j + 1] - row_positions[j]) * scale_y for j in range(self.rows)]
-
-        for cell in cells:
-            r0, r1, c0, c1 = cell["position"]
+            # Nếu cell chiếm nhiều hàng hoặc nhiều cột => merged cell
             if r1 > r0 or c1 > c0:
                 self.merged_cells.add((r0, c0, r1 - r0 + 1, c1 - c0 + 1))
 
         self.update()
         self.update_cells()
 
-    def export_cells(self, filename="table_structure.json"):
+        print("✅ Imported XML structure:", filename)
+
+    def export_cells(self, filename):
+        """
+        Export current table to an XML format compatible with the import function:
+        - one 'table' object (full image)
+        - many 'table row' objects (xmin=0, xmax=img_w)
+        - many 'table column' objects (ymin=0, ymax=img_h)
+        - many 'table spanning cell' objects (only bndbox)
+        All coordinates are in image pixel space (using self.col_widths/self.row_heights).
+        """
         if self.rows == 0 or self.cols == 0:
             print("Chưa có bảng để xuất.")
             return
 
-        all_cells = self.get_all_cells()
+        # --- build cumulative positions in pixel space ---
+        # col_widths and row_heights are expected to be in image pixels (as in import)
+        col_positions = [0.0]
+        for w in self.col_widths:
+            col_positions.append(col_positions[-1] + w)
+        row_positions = [0.0]
+        for h in self.row_heights:
+            row_positions.append(row_positions[-1] + h)
 
-        data = {
-            "cells": [],
-            "header": list(self.header_range)
-        }
+        # round to int for XML coordinates
+        col_positions = [int(round(x)) for x in col_positions]
+        row_positions = [int(round(y)) for y in row_positions]
 
-        for cell in all_cells:
-            data["cells"].append({
-                "token": [cell.get("content", "")],
-                "bbox": cell["bbox"],
-                "position": [
-                    cell["start_row"],
-                    cell["end_row"],
-                    cell["start_col"],
-                    cell["end_col"]
-                ]
-            })
+        img_w = int(round(col_positions[-1]))
+        img_h = int(round(row_positions[-1]))
 
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # --- prepare mapping of merged regions ---
+        # self.merged_cells expected items: (r0, c0, rowspan, colspan)
+        merged_map = {}  # key = (r0,c0) -> (rowspan, colspan)
+        for m in getattr(self, "merged_cells", set()):
+            try:
+                r0, c0, rowspan, colspan = m
+                merged_map[(r0, c0)] = (rowspan, colspan)
+            except Exception:
+                # if stored differently, ignore
+                continue
 
-        print(f"✅ Successfully export label file: {filename}")
+        # We'll iterate grid left-to-right, top-to-bottom, and when we encounter
+        # the top-left of a merged region we'll emit one spanning cell and skip covered cells.
+        visited = [[False] * self.cols for _ in range(self.rows)]
+        span_cells_boxes = []
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if visited[r][c]:
+                    continue
+
+                if (r, c) in merged_map:
+                    rowspan, colspan = merged_map[(r, c)]
+                else:
+                    rowspan, colspan = 1, 1
+
+                # mark covered
+                for rr in range(r, min(self.rows, r + rowspan)):
+                    for cc in range(c, min(self.cols, c + colspan)):
+                        visited[rr][cc] = True
+
+                xmin = col_positions[c]
+                xmax = col_positions[min(self.cols, c + colspan)]
+                ymin = row_positions[r]
+                ymax = row_positions[min(self.rows, r + rowspan)]
+
+                span_cells_boxes.append((xmin, ymin, xmax, ymax))
+
+        # --- build XML doc ---
+        doc = Document()
+        annotation = doc.createElement("annotation")
+        doc.appendChild(annotation)
+
+        # minimal metadata: filename/path/size if available
+        # filename
+        fname_node = doc.createElement("filename")
+        try:
+            fname_node.appendChild(doc.createTextNode(self.image_filename))
+        except Exception:
+            fname_node.appendChild(doc.createTextNode(""))
+        annotation.appendChild(fname_node)
+
+        # size block
+        size = doc.createElement("size")
+        wn = doc.createElement("width");
+        wn.appendChild(doc.createTextNode(str(img_w)));
+        size.appendChild(wn)
+        hn = doc.createElement("height");
+        hn.appendChild(doc.createTextNode(str(img_h)));
+        size.appendChild(hn)
+        dn = doc.createElement("depth");
+        dn.appendChild(doc.createTextNode(str(3)));
+        size.appendChild(dn)
+        annotation.appendChild(size)
+
+        # 1) object: table (full image)
+        obj_table = doc.createElement("object")
+        name_table = doc.createElement("name");
+        name_table.appendChild(doc.createTextNode("table"));
+        obj_table.appendChild(name_table)
+        bnd_table = doc.createElement("bndbox")
+        for tag, val in zip(["xmin", "ymin", "xmax", "ymax"], [0, 0, img_w, img_h]):
+            t = doc.createElement(tag);
+            t.appendChild(doc.createTextNode(str(val)));
+            bnd_table.appendChild(t)
+        obj_table.appendChild(bnd_table)
+        annotation.appendChild(obj_table)
+
+        # 2) objects: table rows
+        for (y0, y1) in zip(row_positions[:-1], row_positions[1:]):
+            obj = doc.createElement("object")
+            name = doc.createElement("name");
+            name.appendChild(doc.createTextNode("table row"));
+            obj.appendChild(name)
+            bnd = doc.createElement("bndbox")
+            xmin_n = doc.createElement("xmin");
+            xmin_n.appendChild(doc.createTextNode(str(0)));
+            bnd.appendChild(xmin_n)
+            ymin_n = doc.createElement("ymin");
+            ymin_n.appendChild(doc.createTextNode(str(y0)));
+            bnd.appendChild(ymin_n)
+            xmax_n = doc.createElement("xmax");
+            xmax_n.appendChild(doc.createTextNode(str(img_w)));
+            bnd.appendChild(xmax_n)
+            ymax_n = doc.createElement("ymax");
+            ymax_n.appendChild(doc.createTextNode(str(y1)));
+            bnd.appendChild(ymax_n)
+            obj.appendChild(bnd)
+            annotation.appendChild(obj)
+
+        # 3) objects: table columns
+        for (x0, x1) in zip(col_positions[:-1], col_positions[1:]):
+            obj = doc.createElement("object")
+            name = doc.createElement("name");
+            name.appendChild(doc.createTextNode("table column"));
+            obj.appendChild(name)
+            bnd = doc.createElement("bndbox")
+            xmin_n = doc.createElement("xmin");
+            xmin_n.appendChild(doc.createTextNode(str(x0)));
+            bnd.appendChild(xmin_n)
+            ymin_n = doc.createElement("ymin");
+            ymin_n.appendChild(doc.createTextNode(str(0)));
+            bnd.appendChild(ymin_n)
+            xmax_n = doc.createElement("xmax");
+            xmax_n.appendChild(doc.createTextNode(str(x1)));
+            bnd.appendChild(xmax_n)
+            ymax_n = doc.createElement("ymax");
+            ymax_n.appendChild(doc.createTextNode(str(img_h)));
+            bnd.appendChild(ymax_n)
+            obj.appendChild(bnd)
+            annotation.appendChild(obj)
+
+        # 4) objects: table spanning cell (only bndbox)
+        for (xmin, ymin, xmax, ymax) in span_cells_boxes:
+            obj = doc.createElement("object")
+            name = doc.createElement("name");
+            name.appendChild(doc.createTextNode("table spanning cell"));
+            obj.appendChild(name)
+            bnd = doc.createElement("bndbox")
+            for tag, val in zip(["xmin", "ymin", "xmax", "ymax"], [xmin, ymin, xmax, ymax]):
+                t = doc.createElement(tag);
+                t.appendChild(doc.createTextNode(str(val)));
+                bnd.appendChild(t)
+            obj.appendChild(bnd)
+            annotation.appendChild(obj)
+
+        # write file
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(doc.toprettyxml(indent="  "))
+
+        print(f"✅ Successfully exported XML file: {filename}")
 
     # ----------------------- Event handlers -----------------------
     def mousePressEvent(self, event):
@@ -671,9 +782,6 @@ class TableEditor(QWidget):
             else:
                 actions["Merge cols"] = menu.addAction("Merge cols")
 
-        if min_row == 0:
-            actions["Mark header"] = menu.addAction("Mark rows as header")
-
         global_pos = QCursor.pos()
         action = menu.exec_(global_pos)
 
@@ -686,8 +794,6 @@ class TableEditor(QWidget):
                 self.merge_selected_rows()
             elif action == actions.get("Merge cols"):
                 self.merge_selected_cols()
-            elif action == actions.get("Mark header"):
-                self.mark_header()
 
     def leaveEvent(self, event):
         while QApplication.overrideCursor() is not None:
@@ -720,16 +826,12 @@ class TableEditor(QWidget):
         y = self.get_row_y_positions()
 
         drawn = set()
-        header_cells = []
 
         # --- Merge cells ---
         p.setPen(QPen(Qt.green, 2))
         for r, c, rs, cs in self.merged_cells:
             x1, y1 = x[c], y[r]
             x2, y2 = x[c + cs], y[r + rs]
-
-            if self.header_range[0] <= r <= self.header_range[1]:
-                header_cells.append((x1, y1, x2, y2))
 
             # Vẽ 4 cạnh đầy đủ
             p.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
@@ -750,21 +852,10 @@ class TableEditor(QWidget):
                 x1, y1 = x[c], y[r]
                 x2, y2 = x[c + 1], y[r + 1]
 
-                if self.header_range[0] <= r <= self.header_range[1]:
-                    header_cells.append((x1, y1, x2, y2))
-
                 p.drawLine(int(x1), int(y1), int(x2), int(y1))
                 p.drawLine(int(x2), int(y1), int(x2), int(y2))
                 p.drawLine(int(x2), int(y2), int(x1), int(y2))
                 p.drawLine(int(x1), int(y2), int(x1), int(y1))
-
-        # --- Header ---
-        p.setPen(QPen(Qt.blue, 2))
-        for x1, y1, x2, y2 in header_cells:
-            p.drawLine(int(x1), int(y1), int(x2), int(y1))
-            p.drawLine(int(x2), int(y1), int(x2), int(y2))
-            p.drawLine(int(x2), int(y2), int(x1), int(y2))
-            p.drawLine(int(x1), int(y2), int(x1), int(y1))
 
         # --- Selection ---
         if hasattr(self, "selected_cells") and self.selected_cells:
