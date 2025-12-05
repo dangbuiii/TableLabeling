@@ -51,73 +51,75 @@ project_root/
 
 After opening the application:
 
-Go to File → Select image folder
+File → Select image folder
 → Choose a folder containing images (.png, .jpg, .jpeg, .bmp).
 
-Go to File → Select label folder
-→ Choose where generated XML annotations will be saved.
+File → Select label folder
+→ Choose the folder where XML annotations will be saved.
 
-The left panel will list all images along with icon statuses:
+The left panel will list all images along with status icons:
 
 ❌ Missing label
 
-⚠️ Unchecked label
+⚠️ Unchecked label (XML exists but not yet verified)
 
-✅ Checked (saved)
+✅ Checked (saved and confirmed)
 
 2. Viewing and navigating images
 
-Click any image in the left panel to load it.
+Click any image in the left file list to load it.
 
-Use the scroll wheel to zoom in/out.
+Use the mouse wheel to zoom in/out.
 
-Drag with your mouse to pan around the image.
+Click and drag to pan across the image.
 
-The viewer automatically fits the table editor to the window.
+The viewer automatically adjusts to fit the table editor inside the window.
 
-3. Creating and editting table structure label
+3. Creating and editing table structure labels
+
 To manually annotate a table:
 
 Click Create table label in the right panel.
 
 Enter the number of rows and columns.
 
-A grid appears on top of the image.
+A grid will appear over the image.
 
-You can now interact with the cells:
+You can now modify the table:
 
-Select cells, rows, column
+Select cells, rows, or columns
 
-Merge/unmerge cells (if supported in your TableEditor)
+Merge / unmerge cell
 
-Adjust cell boundaries (drag the borders)
+Drag cell borders to adjust boundaries
 
-Every change updates the cell list on the right side.
+The list of detected cells updates automatically in the right panel
 
 4. Auto-generate table labels using TATR
 
-You can automatically create table annotations using the integrated model.
+The tool supports automatic annotation using your TATR models.
 
-There are two options:
-
-➤ Auto-create for the current image
+Option A — Auto-create for the current image
 
 Click Auto Create table label
-→ The tool runs process_single_image() using your TATR model.
-→ The generated XML is automatically loaded into the editor.
 
-➤ Auto-create for all images
+The tool runs process_single_image() using the models located in model/
+
+The generated XML is automatically loaded into the editor
+
+Option B — Auto-create for all images
 
 Go to Tool → Auto Create all table labels
-→ Runs process_folder()
-→ A progress dialog appears with:
+
+The tool runs process_folder() on the entire image dataset
+
+A progress dialog appears showing:
 
 Status message
 
 Progress bar
-→ Automatically closes when finished.
 
----
+The dialog automatically closes when the process is completed
 
 ## 📂 Project Structure
 
