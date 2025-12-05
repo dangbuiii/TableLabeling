@@ -29,12 +29,14 @@ The application expects the model files to be located inside the model/ director
 
 Please download your TATR model file separately (e.g., TATR-v1.1-Fin.pth, TATR-SciTSR.pth, etc.) and place it in the model/ folder as shown below:
 
+```
 project_root/
 ├── main.py
 ├── table_editor.py
 ├── auto_labeling.py
 ├── model/
 │   └── your_tatr_model.pth
+```
 
 4. **Run the application**
 
