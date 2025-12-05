@@ -1,5 +1,3 @@
----
-
 # 🧾 TableLabelingV2.0
 
 **TableLabeling** is a graphical tool for creating and editing table annotations in images, developed with **Python** and **PyQt5**.
