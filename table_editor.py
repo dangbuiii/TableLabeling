@@ -25,6 +25,7 @@ class TableEditor(QWidget):
         self.background_image_path = None
         self.background_pixmap = None
         self.scale_factor = 1.0
+        self.parent_scale_factor = 1.0
         self.offset_x = 0
         self.offset_y = 0
 
@@ -154,7 +155,8 @@ class TableEditor(QWidget):
         if not viewport_size.isEmpty():
             scale_w = viewport_size.width() / self.background_pixmap.width()
             scale_h = viewport_size.height() / self.background_pixmap.height()
-            self.scale_factor = min(scale_w, scale_h)
+            padding_ratio = 0.9  # hoặc 0.95 tùy độ padding bạn muốn
+            self.scale_factor = padding_ratio * min(scale_w, scale_h)
             self.offset_x = (viewport_size.width() - self.background_pixmap.width() * self.scale_factor) / 2
             self.offset_y = (viewport_size.height() - self.background_pixmap.height() * self.scale_factor) / 2
         else:
@@ -238,14 +240,58 @@ class TableEditor(QWidget):
             return
 
         min_row, max_row, _, _ = self.get_selected_bound()
-
         deleted_rows = list(range(min_row + 1, max_row + 1))
+        count_deleted = len(deleted_rows)
 
         for row_index in deleted_rows:
             self.row_heights[min_row] += self.row_heights[row_index]
 
         del self.row_heights[min_row + 1:max_row + 1]
         self.rows = len(self.row_heights)
+
+        # --- Cập nhật merged_cells ---
+        updated = set()
+        for (r0, c0, rs, cs) in list(self.merged_cells):
+
+            # 1. Nếu merge cell nằm hoàn toàn dưới vùng gộp -> dịch chuyển r0 lên
+            if r0 > max_row:
+                new_r0 = r0 - count_deleted
+                updated.add((new_r0, c0, rs, cs))
+                continue
+
+            # 2. Nếu merge cell nằm hoàn toàn trên vùng gộp -> giữ nguyên
+            if r0 + rs - 1 < min_row:
+                updated.add((r0, c0, rs, cs))
+                continue
+
+            # 3. Nếu merge cell giao với vùng gộp
+            new_r0 = r0
+            new_rs = rs
+
+            # 3a. Nếu r0 nằm dưới min_row → bị kéo lên
+            if r0 > min_row:
+                new_r0 = min_row
+
+            # 3b. Tính lại chiều cao rs sau khi các hàng bị xóa
+            # tính phần phía trên min_row = max(0, min_row - r0)
+            above = max(0, min_row - r0)
+
+            # tính phần nằm trong vùng bị xóa
+            inside = max(0, min(rs - above, count_deleted))
+
+            new_rs = rs - inside
+
+            # nếu merge cell vượt xuống dưới max_row -> trừ tiếp phần bị xóa
+            if r0 + rs - 1 > max_row:
+                new_rs -= (r0 + rs - 1 - max_row)
+
+            # 3c. Nếu không còn là ô merge -> bỏ
+            if new_rs <= 1 and cs <= 1:
+                continue
+
+            updated.add((new_r0, c0, new_rs, cs))
+
+        self.merged_cells = updated
 
         self.selected_cells.clear()
         self.update()
@@ -256,14 +302,57 @@ class TableEditor(QWidget):
             return
 
         _, _, min_col, max_col = self.get_selected_bound()
-
         deleted_cols = list(range(min_col + 1, max_col + 1))
+        count_deleted = len(deleted_cols)
 
         for col_index in deleted_cols:
             self.col_widths[min_col] += self.col_widths[col_index]
 
         del self.col_widths[min_col + 1:max_col + 1]
         self.cols = len(self.col_widths)
+
+        # --- Cập nhật merged_cells ---
+        updated = set()
+        for (r0, c0, rs, cs) in list(self.merged_cells):
+
+            # 1. Nếu merge cell nằm hoàn toàn bên phải -> dịch c0 sang trái
+            if c0 > max_col:
+                new_c0 = c0 - count_deleted
+                updated.add((r0, new_c0, rs, cs))
+                continue
+
+            # 2. Nếu merge cell nằm hoàn toàn bên trái -> giữ nguyên
+            if c0 + cs - 1 < min_col:
+                updated.add((r0, c0, rs, cs))
+                continue
+
+            # 3. Nếu merge cell giao với vùng merge
+            new_c0 = c0
+            new_cs = cs
+
+            # 3a. Nếu c0 nằm bên phải min_col → kéo về min_col
+            if c0 > min_col:
+                new_c0 = min_col
+
+            # 3b. Tính phần nằm bên trái vùng merge
+            left = max(0, min_col - c0)
+
+            # 3c. phần merge cell nằm trong vùng xóa
+            inside = max(0, min(cs - left, count_deleted))
+
+            new_cs = cs - inside
+
+            # 3d. Nếu merge cell vượt qua max_col → trừ tiếp
+            if c0 + cs - 1 > max_col:
+                new_cs -= (c0 + cs - 1 - max_col)
+
+            # 3e. Nếu không còn là ô merge → bỏ
+            if new_cs <= 1 and rs <= 1:
+                continue
+
+            updated.add((r0, new_c0, rs, new_cs))
+
+        self.merged_cells = updated
 
         self.selected_cells.clear()
         self.update()
@@ -282,6 +371,30 @@ class TableEditor(QWidget):
             self.row_heights.insert(selected_row + i, new_height)
 
         self.rows += n - 1
+
+        new_merge = set()
+
+        for (r0, c0, rs, cs) in self.merged_cells:
+            r1 = r0
+            r2 = r0 + rs - 1
+
+            # 1. merge-cell nằm hoàn toàn trên row split → giữ nguyên
+            if r2 < selected_row:
+                new_merge.add((r0, c0, rs, cs))
+                continue
+
+            # 2. merge-cell nằm hoàn toàn dưới → dịch r0
+            if r0 > selected_row:
+                new_merge.add((r0 + (n - 1), c0, rs, cs))
+                continue
+
+            # 3. merge-cell giao row split → mở rộng rowspan
+            new_r0 = r0
+            new_rs = rs + (n - 1)
+            new_merge.add((new_r0, c0, new_rs, cs))
+
+        self.merged_cells = new_merge
+
         self.selected_cells.clear()
         self.update()
         self.update_cells()
@@ -292,13 +405,40 @@ class TableEditor(QWidget):
 
         selected_col = min(c["start_col"] for c in self.selected_cells)
 
+        # --- Cập nhật kích thước cột ---
         total_width = self.col_widths[selected_col]
         new_width = total_width / n
         self.col_widths[selected_col] = new_width
+
         for i in range(1, n):
             self.col_widths.insert(selected_col + i, new_width)
 
         self.cols += n - 1
+
+        # --- Cập nhật merge cell ---
+        new_merge = set()
+
+        for (r0, c0, rs, cs) in self.merged_cells:
+            c1 = c0
+            c2 = c0 + cs - 1
+
+            # 1. merge-cell nằm hoàn toàn bên trái cột split → giữ nguyên
+            if c2 < selected_col:
+                new_merge.add((r0, c0, rs, cs))
+                continue
+
+            # 2. merge-cell nằm hoàn toàn bên phải cột split → dời sang phải
+            if c0 > selected_col:
+                new_merge.add((r0, c0 + (n - 1), rs, cs))
+                continue
+
+            # 3. merge-cell giao cột split → mở rộng colspan
+            new_c0 = c0
+            new_cs = cs + (n - 1)
+            new_merge.add((r0, new_c0, rs, new_cs))
+
+        self.merged_cells = new_merge
+
         self.selected_cells.clear()
         self.update()
         self.update_cells()
@@ -623,13 +763,13 @@ class TableEditor(QWidget):
 
         # --- Check vertical line ---
         for i in range(1, len(col_lines) - 1):
-            if abs(x_img - col_lines[i]) < 10 and self.rect.top() < y_img < self.rect.bottom():
+            if abs(x_img - col_lines[i]) < 1 + 1 / (self.scale_factor * self.parent_scale_factor) and self.rect.top() < y_img < self.rect.bottom():
                 self.dragging_col = i - 1
                 return
 
         # --- Check horizontal line ---
         for j in range(1, len(row_lines) - 1):
-            if abs(y_img - row_lines[j]) < 10 and self.rect.left() < x_img < self.rect.right():
+            if abs(y_img - row_lines[j]) < 1 + 1 / (self.scale_factor * self.parent_scale_factor) and self.rect.left() < x_img < self.rect.right():
                 self.dragging_row = j - 1
                 return
 
@@ -655,13 +795,13 @@ class TableEditor(QWidget):
 
         # --- Hover horizontal/vertical line ---
         for x_line in self.get_col_x_positions()[1:-1]:
-            if abs(x_img - x_line) < 5:
+            if abs(x_img - x_line) < 1 + 1 / (self.scale_factor * self.parent_scale_factor):
                 QApplication.setOverrideCursor(Qt.SplitHCursor)
                 hovering = True
                 break
         if not hovering:
             for y_line in self.get_row_y_positions()[1:-1]:
-                if abs(y_img - y_line) < 5:
+                if abs(y_img - y_line) < 1 + 1 / (self.scale_factor * self.parent_scale_factor):
                     QApplication.setOverrideCursor(Qt.SplitVCursor)
                     hovering = True
                     break

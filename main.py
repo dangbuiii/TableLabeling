@@ -2,12 +2,14 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QFileDialog, QGroupBox, QAction, QPushButton, QMessageBox, QInputDialog,
     QTextEdit, QTableWidget, QAbstractItemView, QTableWidgetItem, QHeaderView,
-    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget, QSizePolicy
+    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget, QSizePolicy,
+    QDialog, QVBoxLayout, QLabel, QProgressBar
 )
 
 from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from table_editor import TableEditor
+from auto_labeling import process_single_image, process_folder
 import sys
 import os
 
@@ -21,6 +23,48 @@ STATUS_ICONS = {
     FILE_CHECKED: "✅"
 }
 
+class ProcessDialog(QDialog):
+    def __init__(self, parent=None, total=0):
+        super().__init__(parent)
+        self.setWindowTitle("Processing...")
+        self.resize(350, 120)
+
+        layout = QVBoxLayout()
+        self.label = QLabel("Processing...")
+        self.progress = QProgressBar()
+        self.progress.setMinimum(0)
+        self.progress.setMaximum(total)
+
+        layout.addWidget(self.label)
+        layout.addWidget(self.progress)
+        self.setLayout(layout)
+
+class FolderProcessWorker(QThread):
+    progress = pyqtSignal(int, str)   # (current_index, filename)
+    finished = pyqtSignal()
+
+    def __init__(self, image_folder, label_folder):
+        super().__init__()
+        self.image_folder = image_folder
+        self.label_folder = label_folder
+
+    def run(self):
+        files = [
+            f for f in os.listdir(self.image_folder)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+        ]
+
+        os.makedirs(self.label_folder, exist_ok=True)
+
+        total = len(files)
+        for i, filename in enumerate(files):
+            img_path = os.path.join(self.image_folder, filename)
+            self.progress.emit(i + 1, filename)
+
+            # Call your existing function
+            process_single_image(img_path, self.label_folder)
+
+        self.finished.emit()
 
 class EditorViewer(QGraphicsView):
     def __init__(self, editor_widget):
@@ -31,6 +75,8 @@ class EditorViewer(QGraphicsView):
         self.proxy = QGraphicsProxyWidget()
         self.proxy.setWidget(editor_widget)
         self.scene.addItem(self.proxy)
+
+        self.table_editor = editor_widget
 
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
@@ -53,6 +99,8 @@ class EditorViewer(QGraphicsView):
 
     def scale_view(self, factor):
         self.scale_factor *= factor
+
+        self.table_editor.parent_scale_factor *= factor
         self.scale(factor, factor)
 
     def fit_editor_to_view(self):
@@ -86,6 +134,12 @@ class MainWindow(QMainWindow):
         export_action = QAction("Export current table XML", self)
         export_action.triggered.connect(self.export_table_label)
         file_menu.addAction(export_action)
+
+        tool_menu = menu_bar.addMenu("Tool")
+
+        auto_create_all_action = QAction("Auto Create all table label", self)
+        auto_create_all_action.triggered.connect(self.on_auto_create_all)
+        tool_menu.addAction(auto_create_all_action)
 
         # ---- Main layout----
         central_widget = QWidget()
@@ -157,21 +211,21 @@ class MainWindow(QMainWindow):
 
         btn_create_label = QPushButton("Create table label")
         btn_auto_label = QPushButton("Auto Create table label")
-        btn_ocr = QPushButton("OCR")
         btn_save = QPushButton("Save")
+        btn_next = QPushButton("Save and Next")
 
-        for btn in [btn_create_label, btn_auto_label, btn_ocr, btn_save]:
+        for btn in [btn_create_label, btn_auto_label, btn_save, btn_next]:
             btn.setFixedSize(130, 40)
 
         button_layout.addWidget(btn_create_label, 0, 0)
         button_layout.addWidget(btn_auto_label, 0, 1)
-        button_layout.addWidget(btn_ocr, 1, 0)
-        button_layout.addWidget(btn_save, 1, 1)
+        button_layout.addWidget(btn_next, 1, 1)
+        button_layout.addWidget(btn_save, 1, 0)
         right_layout.addWidget(button_group)
 
         btn_create_label.clicked.connect(self.create_table_label)
         btn_auto_label.clicked.connect(self.auto_create_table_label)
-        btn_ocr.clicked.connect(self.run_ocr)
+        btn_next.clicked.connect(self.save_and_next)
         btn_save.clicked.connect(self.export_table_label)
 
         # --- Bảng thông tin ô ---
@@ -330,20 +384,54 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please select an image first.")
             return
 
-        # Gọi hàm AI hoặc OCR tự động xác định bảng (tạm thời dùng ví dụ)
-        QMessageBox.information(self, "Auto Label", "Auto-created table labels from image.")
-
-    def run_ocr(self):
-        if not self.current_image_name:
-            QMessageBox.warning(self, "Warning", "Please select an image first.")
-            return
+        image_path = os.path.join(self.image_folder, self.current_image_name)
 
         try:
-            self.table_editor.run_ocr()
-            QMessageBox.information(self, "OCR", "OCR completed successfully.")
+            process_single_image(image_path, self.label_folder)
+            self.table_editor.clear_table()
+            self.try_load_table_from_xml(self.current_image_name)
 
         except Exception as e:
-            QMessageBox.critical(self, "OCR Error", f"OCR failed:\n{e}")
+            QMessageBox.critical(self, "Error", f"Lỗi khi chạy Auto Label:\n{e}")
+
+        self.update_file_status()
+
+    def on_auto_create_all(self):
+        if not self.image_folder:
+            QMessageBox.warning(self, "Warning", "Please select an image folder first.")
+            return
+        if not self.label_folder:
+            QMessageBox.warning(self, "Warning", "Please select a label folder first.")
+            return
+
+        # Lấy danh sách file để xác định tổng số lượng
+        files = [
+            f for f in os.listdir(self.image_folder)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+        ]
+
+        # Tạo dialog hiển thị tiến trình
+        self.process_dialog = ProcessDialog(self, total=len(files))
+        self.process_dialog.show()
+
+        # Tạo worker chạy thread
+        self.worker = FolderProcessWorker(self.image_folder, self.label_folder)
+
+        # Kết nối tín hiệu
+        self.worker.progress.connect(self.on_process_progress)
+        self.worker.finished.connect(self.on_process_finished)
+
+        # Bắt đầu chạy
+        self.worker.start()
+
+    def on_process_progress(self, value, filename):
+        self.process_dialog.progress.setValue(value)
+        self.process_dialog.label.setText(f"Processing: {filename}")
+
+    def on_process_finished(self):
+        self.process_dialog.close()
+        # Reload file list status icon
+        self.update_file_status()
 
     def try_load_table_from_xml(self, image_name):
         if not self.label_folder:
@@ -386,6 +474,23 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export XML:\n{e}")
+
+    def save_and_next(self):
+        self.export_table_label()
+
+        next_row = None
+        for row in range(self.file_table.rowCount()):
+            fname_item = self.file_table.item(row, 1)
+            if fname_item and fname_item.text() == self.current_image_name:
+                next_row = row + 1
+                break
+
+        if next_row is None or next_row >= self.file_table.rowCount():
+            QMessageBox.information(self, "Done", "No more images.")
+            return
+
+        self.file_table.selectRow(next_row)
+        self.on_file_table_clicked(next_row, 0)
 
     def update_cells_info(self):
         self.is_modified = True
