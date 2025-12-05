@@ -3,8 +3,6 @@
 **TableLabeling** is a graphical tool for creating and editing table annotations in images, developed with **Python** and **PyQt5**.
 The application helps users easily define table structures, supporting tasks such as training table structure recognition models.
 
----
-
 ## 🛠️ Installation and Run
 
 You can install and run the application with the following steps:
@@ -44,82 +42,62 @@ project_root/
    python main.py
    ```
 
----
+## 📌 Usage Guide
 
-📌 Usage Guide
-1. Select folders
+### **1. Select folders**
 
 After opening the application:
 
-File → Select image folder
-→ Choose a folder containing images (.png, .jpg, .jpeg, .bmp).
+- Go to **File → Select image folder**  
+  → Choose a folder containing images (`.png`, `.jpg`, `.jpeg`, `.bmp`).
 
-File → Select label folder
-→ Choose the folder where XML annotations will be saved.
+- Go to **File → Select label folder**  
+  → Choose the folder where XML annotations will be saved.
 
-The left panel will list all images along with status icons:
+The left panel will display a list of images with status indicators:
 
-❌ Missing label
+- ❌ **Missing label** – No annotation found  
+- ⚠️ **Unchecked label** – Annotation exists but not yet verified  
+- ✅ **Checked (saved)** – Annotation has been saved and confirmed
 
-⚠️ Unchecked label (XML exists but not yet verified)
 
-✅ Checked (saved and confirmed)
+### **2. Viewing and navigating images**
 
-2. Viewing and navigating images
+- Click any image in the list to load it.  
+- Use the **mouse wheel** to zoom in/out.  
+- **Click and drag** to pan around the image.  
+- The viewer automatically **fits** the table editor when resized.
 
-Click any image in the left file list to load it.
 
-Use the mouse wheel to zoom in/out.
+### **3. Creating and editing table structure labels**
 
-Click and drag to pan across the image.
+To manually create table labels:
 
-The viewer automatically adjusts to fit the table editor inside the window.
+1. Click **Create table label** in the right panel.  
+2. Enter the number of **rows** and **columns**.  
+3. A grid will appear on top of the image.
 
-3. Creating and editing table structure labels
+You can then:
 
-To manually annotate a table:
+- Select **cells, rows, or columns**
+- **Merge / Unmerge** cells
+- Drag borders to adjust cell sizes
+- View updated cell details in the cell list on the right panel
 
-Click Create table label in the right panel.
 
-Enter the number of rows and columns.
+### **4. Auto-generate table labels using TATR**
 
-A grid will appear over the image.
+The application can automatically generate table annotations using TATR-based models.
 
-You can now modify the table:
+#### **Option A — Auto-create for the current image**
 
-Select cells, rows, or columns
+- Click **Auto Create table label**  
+  
+#### **Option B — Auto-create for all images in the folder**
 
-Merge / unmerge cell
+- Go to **Tool → Auto Create all table labels**  
 
-Drag cell borders to adjust boundaries
-
-The list of detected cells updates automatically in the right panel
-
-4. Auto-generate table labels using TATR
-
-The tool supports automatic annotation using your TATR models.
-
-Option A — Auto-create for the current image
-
-Click Auto Create table label
-
-The tool runs process_single_image() using the models located in model/
-
-The generated XML is automatically loaded into the editor
-
-Option B — Auto-create for all images
-
-Go to Tool → Auto Create all table labels
-
-The tool runs process_folder() on the entire image dataset
-
-A progress dialog appears showing:
-
-Status message
-
-Progress bar
-
-The dialog automatically closes when the process is completed
+The dialog will automatically close when processing is complete.
 
 ## 📂 Project Structure
 
@@ -134,14 +112,12 @@ TableLabeling/
 ├── README.md
 ```
 
----
 
 ## 🤝 Contribution
 
 Pull requests and improvements are welcome!
 Please open an issue before submitting major changes.
 
----
 
 ## 📄 License
 
