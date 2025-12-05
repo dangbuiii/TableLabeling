@@ -1,6 +1,3 @@
-Dưới đây là phiên bản **đầy đủ – có thể copy & paste trực tiếp vào README.md trên GitHub**
-(đã sửa lỗi format, đóng code block đúng cách, không bị đứt đoạn).
-
 ---
 
 # 🧾 TableLabelingV2.0
