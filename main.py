@@ -99,14 +99,26 @@ class EditorViewer(QGraphicsView):
 
     def scale_view(self, factor):
         self.scale_factor *= factor
-
-        self.table_editor.parent_scale_factor *= factor
         self.scale(factor, factor)
 
     def fit_editor_to_view(self):
-        if self.proxy:
-            self.fitInView(self.proxy, Qt.KeepAspectRatio)
-            self.scale_factor = 1.0
+        if not self.proxy:
+            return
+
+        rect = self.proxy.boundingRect()
+
+        PADDING = 20
+
+        padded_rect = rect.adjusted(
+            -PADDING, -PADDING,
+            PADDING, PADDING
+        )
+
+        self.scene.setSceneRect(padded_rect)
+
+        self.fitInView(padded_rect, Qt.KeepAspectRatio)
+
+        self.scale_factor = 1.0
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

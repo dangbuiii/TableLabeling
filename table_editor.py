@@ -24,10 +24,6 @@ class TableEditor(QWidget):
         # Image
         self.background_image_path = None
         self.background_pixmap = None
-        self.scale_factor = 1.0
-        self.parent_scale_factor = 1.0
-        self.offset_x = 0
-        self.offset_y = 0
 
         # Table state
         self.rect = QRectF(0, 0, 800, 600)
@@ -44,14 +40,20 @@ class TableEditor(QWidget):
         self.drag_start_pos = None
         self.selected_cells = []
         self.dragging_selection = False
+        self.hover_col = None
+        self.hover_row = None
 
     # ----------------------- Utility functions -----------------------
     def map_to_image_coord(self, pt):
-        if self.scale_factor == 0:
-            return pt.x() - self.offset_x, pt.y() - self.offset_y
-        x = (pt.x() - self.offset_x) / self.scale_factor
-        y = (pt.y() - self.offset_y) / self.scale_factor
-        return x, y
+        return pt.x(), pt.y()
+
+    def hit_tolerance(self):
+        view = self.parent()
+        if view and hasattr(view, "transform"):
+            scale = view.transform().m11()
+            if scale > 0:
+                return max(4, 8 / scale)
+        return 5
 
     def get_col_x_positions(self):
         x_positions = [self.rect.left()]
@@ -145,23 +147,14 @@ class TableEditor(QWidget):
     def set_image(self, image_path):
         self.background_image_path = image_path
         self.background_pixmap = QPixmap(image_path)
-        self.rect = QRectF(0, 0, self.background_pixmap.width(), self.background_pixmap.height())
 
-        if self.parent() and hasattr(self.parent(), "viewport"):
-            viewport_size = self.parent().viewport().size()
-        else:
-            viewport_size = self.size()
+        if self.background_pixmap.isNull():
+            return
 
-        if not viewport_size.isEmpty():
-            scale_w = viewport_size.width() / self.background_pixmap.width()
-            scale_h = viewport_size.height() / self.background_pixmap.height()
-            padding_ratio = 0.9
-            self.scale_factor = padding_ratio * min(scale_w, scale_h)
-            self.offset_x = (viewport_size.width() - self.background_pixmap.width() * self.scale_factor) / 2
-            self.offset_y = (viewport_size.height() - self.background_pixmap.height() * self.scale_factor) / 2
-        else:
-            self.scale_factor = 1.0
-            self.offset_x = self.offset_y = 0
+        self.setFixedSize(
+            self.background_pixmap.width(),
+            self.background_pixmap.height()
+        )
 
         self.update()
 
@@ -685,17 +678,17 @@ class TableEditor(QWidget):
         col_lines = self.get_col_x_positions()
         row_lines = self.get_row_y_positions()
 
-        # --- Check vertical line ---
-        for i in range(1, len(col_lines) - 1):
-            if abs(x_img - col_lines[i]) < 1 + 1 / (self.scale_factor * self.parent_scale_factor) and self.rect.top() < y_img < self.rect.bottom():
-                self.dragging_col = i - 1
-                return
+        tol = self.hit_tolerance()
 
-        # --- Check horizontal line ---
-        for j in range(1, len(row_lines) - 1):
-            if abs(y_img - row_lines[j]) < 1 + 1 / (self.scale_factor * self.parent_scale_factor) and self.rect.left() < x_img < self.rect.right():
-                self.dragging_row = j - 1
-                return
+        if self.hover_col is not None:
+            self.dragging_col = self.hover_col
+            self.drag_start_pos = (x_img, y_img)
+            return
+
+        if self.hover_row is not None:
+            self.dragging_row = self.hover_row
+            self.drag_start_pos = (x_img, y_img)
+            return
 
         # --- Start selecting ---
         if event.button() == Qt.LeftButton:
@@ -715,57 +708,75 @@ class TableEditor(QWidget):
             return super().mouseMoveEvent(event)
 
         x_img, y_img = self.map_to_image_coord(event.pos())
-        hovering = False
 
-        # --- Hover horizontal/vertical line ---
-        for x_line in self.get_col_x_positions()[1:-1]:
-            if abs(x_img - x_line) < 1 + 1 / (self.scale_factor * self.parent_scale_factor):
-                QApplication.setOverrideCursor(Qt.SplitHCursor)
-                hovering = True
+        tol = self.hit_tolerance()
+
+        self.hover_col = None
+        self.hover_row = None
+
+        # vertical
+        for i, x_line in enumerate(self.get_col_x_positions()[1:-1]):
+            if abs(x_img - x_line) < tol:
+                self.hover_col = i
                 break
-        if not hovering:
-            for y_line in self.get_row_y_positions()[1:-1]:
-                if abs(y_img - y_line) < 1 + 1 / (self.scale_factor * self.parent_scale_factor):
-                    QApplication.setOverrideCursor(Qt.SplitVCursor)
-                    hovering = True
+
+        # horizontal
+        if self.hover_col is None:
+            for j, y_line in enumerate(self.get_row_y_positions()[1:-1]):
+                if abs(y_img - y_line) < tol:
+                    self.hover_row = j
                     break
-        if not hovering:
+
+        # cursor
+        if self.hover_col is not None:
+            QApplication.setOverrideCursor(Qt.SplitHCursor)
+        elif self.hover_row is not None:
+            QApplication.setOverrideCursor(Qt.SplitVCursor)
+        elif self.dragging_col is None and self.dragging_row is None:
             QApplication.restoreOverrideCursor()
 
         # --- drag vertical line ---
         if self.dragging_col is not None and self.drag_start_pos is not None:
+            QApplication.setOverrideCursor(Qt.SplitHCursor)
+
             i = self.dragging_col
             dx = x_img - self.drag_start_pos[0]
 
             w_left = self.col_widths[i]
             w_right = self.col_widths[i + 1]
 
-            dx = max(dx, - (w_left - 15))
-            dx = min(dx, w_right - 15)
+            dx = max(dx, -(w_left - 15))
+            dx = min(dx, (w_right - 15))
 
-            self.col_widths[i] += dx
-            self.col_widths[i + 1] -= dx
-            self.drag_start_pos = (x_img, y_img)
-            self.update()
-            self.update_cells()
+            if abs(dx) > 0:
+                self.col_widths[i] += dx
+                self.col_widths[i + 1] -= dx
+                self.drag_start_pos = (x_img, y_img)
+                self.update()
+                self.update_cells()
+
             return
 
         # --- drag horizontal line ---
         if self.dragging_row is not None and self.drag_start_pos is not None:
+            QApplication.setOverrideCursor(Qt.SplitVCursor)
+
             j = self.dragging_row
             dy = y_img - self.drag_start_pos[1]
 
             h_top = self.row_heights[j]
             h_bottom = self.row_heights[j + 1]
 
-            dy = max(dy, - (h_top - 15))
-            dy = min(dy, h_bottom - 15)
+            dy = max(dy, -(h_top - 15))
+            dy = min(dy, (h_bottom - 15))
 
-            self.row_heights[j] += dy
-            self.row_heights[j + 1] -= dy
-            self.drag_start_pos = (x_img, y_img)
-            self.update()
-            self.update_cells()
+            if abs(dy) > 0:
+                self.row_heights[j] += dy
+                self.row_heights[j + 1] -= dy
+                self.drag_start_pos = (x_img, y_img)
+                self.update()
+                self.update_cells()
+
             return
 
         # --- Select multi cell ---
@@ -776,6 +787,14 @@ class TableEditor(QWidget):
             cells = self.find_cells_in_rect(rect)
             self.selected_cells = cells
             self.update()
+
+        if (
+                self.hover_col is None
+                and self.hover_row is None
+                and self.dragging_col is None
+                and self.dragging_row is None
+        ):
+            QApplication.restoreOverrideCursor()
 
     def mouseReleaseEvent(self, event):
         if not self.show_table:
@@ -795,7 +814,11 @@ class TableEditor(QWidget):
                 cell = self.find_cell_by_point(point)
                 self.selected_cells = [cell] if cell else []
 
+        self.dragging_col = None
+        self.dragging_row = None
         self.drag_start_pos = None
+
+        QApplication.restoreOverrideCursor()
         self.update()
 
     def contextMenuEvent(self, event):
@@ -879,35 +902,47 @@ class TableEditor(QWidget):
             return
 
         p = QPainter(self)
-        p.translate(self.offset_x, self.offset_y)
-        p.scale(self.scale_factor, self.scale_factor)
+        p.setRenderHint(QPainter.Antialiasing, False)
         p.drawPixmap(0, 0, self.background_pixmap)
 
         if not self.show_table or self.rows == 0 or self.cols == 0:
             return
 
+        # ---------------- Pixel helper ----------------
+        def px(v: float) -> float:
+            return round(v) + 0.5
+
+        def draw_line(x1, y1, x2, y2):
+            p.drawLine(
+                QPointF(px(x1), px(y1)),
+                QPointF(px(x2), px(y2))
+            )
+
+        # ----------------------------------------------
         x = self.get_col_x_positions()
         y = self.get_row_y_positions()
 
         drawn = set()
 
-        # --- Merge cells ---
-        p.setPen(QPen(Qt.green, 2))
+        pen = QPen(Qt.green, 2)
+        pen.setCosmetic(True)
+        p.setPen(pen)
+
+        # -------- Merge cells --------
         for r, c, rs, cs in self.merged_cells:
             x1, y1 = x[c], y[r]
             x2, y2 = x[c + cs], y[r + rs]
 
-            # Vẽ 4 cạnh đầy đủ
-            p.drawLine(int(x1), int(y1), int(x2), int(y1))  # top
-            p.drawLine(int(x2), int(y1), int(x2), int(y2))  # right
-            p.drawLine(int(x2), int(y2), int(x1), int(y2))  # bottom
-            p.drawLine(int(x1), int(y2), int(x1), int(y1))  # left
+            draw_line(x1, y1, x2, y1)  # top
+            draw_line(x2, y1, x2, y2)  # right
+            draw_line(x2, y2, x1, y2)  # bottom
+            draw_line(x1, y2, x1, y1)  # left
 
             for i in range(r, r + rs):
                 for j in range(c, c + cs):
                     drawn.add((i, j))
 
-        # --- Single cells ---
+        # -------- Single cells --------
         for r in range(self.rows):
             for c in range(self.cols):
                 if (r, c) in drawn:
@@ -916,33 +951,35 @@ class TableEditor(QWidget):
                 x1, y1 = x[c], y[r]
                 x2, y2 = x[c + 1], y[r + 1]
 
-                p.drawLine(int(x1), int(y1), int(x2), int(y1))
-                p.drawLine(int(x2), int(y1), int(x2), int(y2))
-                p.drawLine(int(x2), int(y2), int(x1), int(y2))
-                p.drawLine(int(x1), int(y2), int(x1), int(y1))
+                draw_line(x1, y1, x2, y1)
+                draw_line(x2, y1, x2, y2)
+                draw_line(x2, y2, x1, y2)
+                draw_line(x1, y2, x1, y1)
 
-        # --- Selection ---
-        if hasattr(self, "selected_cells") and self.selected_cells:
+        # -------- Selection --------
+        if self.selected_cells:
             min_row, max_row, min_col, max_col = self.get_selected_bound()
 
-            x_positions = self.get_col_x_positions()
-            y_positions = self.get_row_y_positions()
+            x0 = x[min_col]
+            y0 = y[min_row]
+            x1 = x[max_col + 1]
+            y1 = y[max_row + 1]
 
-            x0 = x_positions[min_col]
-            y0 = y_positions[min_row]
-            x1 = x_positions[max_col + 1]
-            y1 = y_positions[max_row + 1]
+            rect = QRectF(px(x0), px(y0), px(x1) - px(x0), px(y1) - px(y0))
 
-            rect = QRectF(int(x0), int(y0), int(x1 - x0), int(y1 - y0))
-
-            # --- Mask ---
+            # mask
             p.save()
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(100, 100, 100, 60))
             p.drawRect(rect)
             p.restore()
 
-            # --- Border ---
-            p.setPen(QPen(Qt.red, 3, Qt.DashLine))
+            # border
+            grid_pen = QPen(Qt.red, 3, Qt.DashLine)
+            grid_pen.setCosmetic(True)
+            p.setPen(grid_pen)
             p.setBrush(Qt.NoBrush)
             p.drawRect(rect)
+
+
+
