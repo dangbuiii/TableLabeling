@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QProgressBar
 )
 
+from PyQt5.QtWidgets import QShortcut
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from table_editor import TableEditor
@@ -130,6 +132,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Table Labeling Tool")
         self.resize(1400, 800)
+        self._init_shortcuts()
 
         # ---- Menu ----
         menu_bar = self.menuBar()
@@ -279,6 +282,19 @@ class MainWindow(QMainWindow):
         self.current_cell = None
         self.file_status = {}
         self.is_modified = False
+
+    def _init_shortcuts(self):
+        shortcuts = [
+            (QKeySequence("Ctrl+S"), self.export_table_label),
+            (QKeySequence("Ctrl+N"), self.save_and_next),
+            (QKeySequence(Qt.Key_Down), self.next_image),
+            (QKeySequence(Qt.Key_Up), self.prev_image),
+        ]
+
+        for key, handler in shortcuts:
+            sc = QShortcut(key, self)
+            sc.setContext(Qt.ApplicationShortcut)
+            sc.activated.connect(handler)
 
     # === Load / Save / Control ==========
     def select_image_folder(self):
@@ -532,6 +548,30 @@ class MainWindow(QMainWindow):
             return
         self.on_file_table_clicked(current_row, 0)
 
+    def next_image(self):
+        if self.file_table.rowCount() == 0:
+            return
+
+        current_row = self.file_table.currentRow()
+        if current_row < 0:
+            return
+
+        next_row = current_row + 1
+        if next_row >= self.file_table.rowCount():
+            QMessageBox.information(self, "Done", "No more images.")
+            return
+
+        self.file_table.selectRow(next_row)
+
+    def prev_image(self):
+        if self.file_table.rowCount() == 0:
+            return
+
+        current_row = self.file_table.currentRow()
+        if current_row <= 0:
+            return
+
+        self.file_table.selectRow(current_row - 1)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

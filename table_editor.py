@@ -32,7 +32,7 @@ class TableEditor(QWidget):
         self.col_widths = []
         self.row_heights = []
         self.merged_cells = set()
-        self.show_table = True
+        self.edit_enabled = True
 
         # Mouse interaction
         self.dragging_col = None
@@ -666,7 +666,7 @@ class TableEditor(QWidget):
 
     # ----------------------- Event handlers -----------------------
     def mousePressEvent(self, event):
-        if not self.show_table or self.rows == 0 or self.cols == 0:
+        if not self.edit_enabled or self.rows == 0 or self.cols == 0:
             return super().mousePressEvent(event)
 
         x_img, y_img = self.map_to_image_coord(event.pos())
@@ -704,7 +704,7 @@ class TableEditor(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event):
-        if not self.show_table or self.rows == 0 or self.cols == 0:
+        if not self.edit_enabled or self.rows == 0 or self.cols == 0:
             return super().mouseMoveEvent(event)
 
         x_img, y_img = self.map_to_image_coord(event.pos())
@@ -797,7 +797,7 @@ class TableEditor(QWidget):
             QApplication.restoreOverrideCursor()
 
     def mouseReleaseEvent(self, event):
-        if not self.show_table:
+        if not self.edit_enabled:
             return super().mouseReleaseEvent(event)
 
         x_img, y_img = self.map_to_image_coord(event.pos())
@@ -888,13 +888,21 @@ class TableEditor(QWidget):
         super().leaveEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Space:
-            self.show_table = not self.show_table
-            self.update()
+        if event.key() == Qt.Key_Control and not event.isAutoRepeat():
+            self.edit_enabled = False
+            QApplication.setOverrideCursor(Qt.ArrowCursor)
+            return
+
         if event.key() == Qt.Key_Tab:
             if self.selected_cells:
                 index = self.get_all_cells().index(self.selected_cells[0])
                 self.select_cell((index + 1) % len(self.get_all_cells()))
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_Control and not event.isAutoRepeat():
+            self.edit_enabled = True
+            QApplication.restoreOverrideCursor()
+            return
 
     # ----------------------- Rendering -----------------------
     def paintEvent(self, e):
@@ -905,7 +913,7 @@ class TableEditor(QWidget):
         p.setRenderHint(QPainter.Antialiasing, False)
         p.drawPixmap(0, 0, self.background_pixmap)
 
-        if not self.show_table or self.rows == 0 or self.cols == 0:
+        if self.rows == 0 or self.cols == 0:
             return
 
         # ---------------- Pixel helper ----------------
