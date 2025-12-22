@@ -503,9 +503,25 @@ class TableEditor(QWidget):
             r0, r1, c0, c1 = cell["position"]
 
             if r1 > r0 or c1 > c0:
-                self.merged_cells.add(
-                    (r0, c0, r1 - r0 + 1, c1 - c0 + 1)
-                )
+                new_merge = (r0, c0, r1 - r0 + 1, c1 - c0 + 1)
+
+                has_overlap = False
+                for old in self.merged_cells:
+                    ar0, ac0, ars, acs = old
+                    ar1, ac1 = ar0 + ars - 1, ac0 + acs - 1
+
+                    br0, bc0, brs, bcs = new_merge
+                    br1, bc1 = br0 + brs - 1, bc0 + bcs - 1
+
+                    if not (
+                            ar1 < br0 or ar0 > br1 or
+                            ac1 < bc0 or ac0 > bc1
+                    ):
+                        has_overlap = True
+                        break
+
+                if not has_overlap:
+                    self.merged_cells.add(new_merge)
 
         self.update()
         self.update_cells()

@@ -14,6 +14,7 @@ from table_editor import TableEditor
 from auto_labeling import process_single_image, process_folder
 import sys
 import os
+import json
 
 FILE_MISSING = "missing"
 FILE_UNCHECKED = "unchecked"
@@ -24,6 +25,8 @@ STATUS_ICONS = {
     FILE_UNCHECKED: "⚠️",
     FILE_CHECKED: "✅"
 }
+
+STATE_FILE = "workspace_state.json"
 
 class ProcessDialog(QDialog):
     def __init__(self, parent=None, total=0):
@@ -42,7 +45,7 @@ class ProcessDialog(QDialog):
         self.setLayout(layout)
 
 class FolderProcessWorker(QThread):
-    progress = pyqtSignal(int, str)   # (current_index, filename)
+    progress = pyqtSignal(int, str)
     finished = pyqtSignal()
 
     def __init__(self, image_folder, label_folder):
@@ -198,7 +201,7 @@ class MainWindow(QMainWindow):
         image_layout.setSpacing(0)
 
         self.table_editor = TableEditor()
-        # TableEditor must implement import_cells_xml / export_cells_xml
+        # TableEditor
         self.table_editor.cellsChanged.connect(self.update_cells_info)
         self.table_editor.cellSelected.connect(self.on_cell_selected)
 
@@ -243,7 +246,7 @@ class MainWindow(QMainWindow):
         btn_next.clicked.connect(self.save_and_next)
         btn_save.clicked.connect(self.export_table_label)
 
-        # --- Bảng thông tin ô ---
+        # --- Cells list ---
         self.coord_table = QTableWidget()
         self.coord_table.setColumnCount(4)
         self.coord_table.setHorizontalHeaderLabels(["Id", "BBox", "Rows", "Cols"])
@@ -263,7 +266,7 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(self.coord_table)
 
-        # (c) Cell Content
+        # (c) Empty
         content_group = QGroupBox("Empty panel")
         content_group.setFixedWidth(290)
         content_layout = QVBoxLayout(content_group)
@@ -282,6 +285,8 @@ class MainWindow(QMainWindow):
         self.current_cell = None
         self.file_status = {}
         self.is_modified = False
+
+        self.load_workspace_state()
 
     def _init_shortcuts(self):
         shortcuts = [
@@ -432,24 +437,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please select a label folder first.")
             return
 
-        # Lấy danh sách file để xác định tổng số lượng
         files = [
             f for f in os.listdir(self.image_folder)
             if f.lower().endswith(('.png', '.jpg', '.jpeg'))
         ]
 
-        # Tạo dialog hiển thị tiến trình
         self.process_dialog = ProcessDialog(self, total=len(files))
         self.process_dialog.show()
 
-        # Tạo worker chạy thread
         self.worker = FolderProcessWorker(self.image_folder, self.label_folder)
 
-        # Kết nối tín hiệu
         self.worker.progress.connect(self.on_process_progress)
         self.worker.finished.connect(self.on_process_finished)
 
-        # Bắt đầu chạy
         self.worker.start()
 
     def on_process_progress(self, value, filename):
@@ -460,6 +460,7 @@ class MainWindow(QMainWindow):
         self.process_dialog.close()
         # Reload file list status icon
         self.update_file_status()
+        self.save_workspace_state()
 
     def try_load_table_from_xml(self, image_name):
         if not self.label_folder:
@@ -468,7 +469,6 @@ class MainWindow(QMainWindow):
         xml_path = os.path.join(self.label_folder, xml_name)
         if os.path.exists(xml_path):
             try:
-                # TableEditor must provide import_cells_xml(filename)
                 self.table_editor.import_cells(xml_path)
                 return True
             except Exception as e:
@@ -485,11 +485,11 @@ class MainWindow(QMainWindow):
         base_name = os.path.splitext(self.current_image_name)[0]
         file_path = os.path.join(self.label_folder, f"{base_name}.xml")
         try:
-            # TableEditor must provide export_cells_xml(filename)
             self.table_editor.export_cells(file_path)
             self.is_modified = False
 
             self.file_status[self.current_image_name] = FILE_CHECKED
+            self.save_workspace_state()
 
             for row in range(self.file_table.rowCount()):
                 fname_item = self.file_table.item(row, 1)
@@ -572,6 +572,57 @@ class MainWindow(QMainWindow):
             return
 
         self.file_table.selectRow(current_row - 1)
+
+    def save_workspace_state(self):
+        state = {
+            "image_folder": self.image_folder,
+            "label_folder": self.label_folder,
+            "checked_files": [
+                fname for fname, status in self.file_status.items()
+                if status == FILE_CHECKED
+            ]
+        }
+
+        try:
+            with open(STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print("Failed to save workspace state:", e)
+
+    def load_workspace_state(self):
+        if not os.path.exists(STATE_FILE):
+            return
+
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            return
+
+        self.image_folder = state.get("image_folder", "")
+        self.label_folder = state.get("label_folder", "")
+        checked_files = set(state.get("checked_files", []))
+
+        if self.image_folder and os.path.isdir(self.image_folder):
+            self.load_image_list()
+
+            # restore checked state
+            for fname in checked_files:
+                if fname in self.file_status:
+                    self.file_status[fname] = FILE_CHECKED
+
+            self.update_file_status()
+
+            # auto select first unchecked or first file
+            for row in range(self.file_table.rowCount()):
+                fname = self.file_table.item(row, 1).text()
+                if self.file_status.get(fname) != FILE_CHECKED:
+                    self.file_table.selectRow(row)
+                    return
+
+            if self.file_table.rowCount() > 0:
+                self.file_table.selectRow(0)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
