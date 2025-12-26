@@ -1,20 +1,23 @@
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QFileDialog, QGroupBox, QAction, QPushButton, QMessageBox, QInputDialog,
-    QTextEdit, QTableWidget, QAbstractItemView, QTableWidgetItem, QHeaderView,
-    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget, QSizePolicy,
-    QDialog, QVBoxLayout, QLabel, QProgressBar
-)
-
-from PyQt5.QtWidgets import QShortcut
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from table_editor import TableEditor
-from auto_labeling import process_single_image, process_folder
 import sys
 import os
 import json
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QKeySequence, QFont
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
+    QFileDialog, QGroupBox, QAction,
+    QPushButton, QMessageBox, QInputDialog,
+    QTableWidget, QTableWidgetItem,
+    QAbstractItemView, QHeaderView,
+    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget,
+    QSizePolicy, QDialog, QLabel, QProgressBar,
+    QTextEdit, QShortcut
+)
+
+from table_editor import TableEditor
+from table_struture_rec import table_structure_recognize
 
 FILE_MISSING = "missing"
 FILE_UNCHECKED = "unchecked"
@@ -27,6 +30,7 @@ STATUS_ICONS = {
 }
 
 STATE_FILE = "workspace_state.json"
+
 
 class ProcessDialog(QDialog):
     def __init__(self, parent=None, total=0):
@@ -44,7 +48,8 @@ class ProcessDialog(QDialog):
         layout.addWidget(self.progress)
         self.setLayout(layout)
 
-class FolderProcessWorker(QThread):
+
+class ProcessWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal()
 
@@ -66,10 +71,10 @@ class FolderProcessWorker(QThread):
             img_path = os.path.join(self.image_folder, filename)
             self.progress.emit(i + 1, filename)
 
-            # Call your existing function
-            process_single_image(img_path, self.label_folder)
+            table_structure_recognize(img_path, self.label_folder)
 
         self.finished.emit()
+
 
 class EditorViewer(QGraphicsView):
     def __init__(self, editor_widget):
@@ -262,7 +267,6 @@ class MainWindow(QMainWindow):
         header.resizeSection(3, 59)
 
         self.coord_table.verticalHeader().setVisible(False)
-        self.coord_table.cellClicked.connect(self.on_table_item_clicked)
 
         right_layout.addWidget(self.coord_table)
 
@@ -420,7 +424,7 @@ class MainWindow(QMainWindow):
         image_path = os.path.join(self.image_folder, self.current_image_name)
 
         try:
-            process_single_image(image_path, self.label_folder)
+            table_structure_recognize(image_path, self.label_folder)
             self.table_editor.clear_table()
             self.try_load_table_from_xml(self.current_image_name)
 
@@ -445,7 +449,7 @@ class MainWindow(QMainWindow):
         self.process_dialog = ProcessDialog(self, total=len(files))
         self.process_dialog.show()
 
-        self.worker = FolderProcessWorker(self.image_folder, self.label_folder)
+        self.worker = ProcessWorker(self.image_folder, self.label_folder)
 
         self.worker.progress.connect(self.on_process_progress)
         self.worker.finished.connect(self.on_process_finished)
@@ -522,15 +526,17 @@ class MainWindow(QMainWindow):
 
     def update_cells_info(self):
         self.is_modified = True
-        cells = self.table_editor.get_all_cells()
+        cells = self.table_editor.table.get_all_cells()
         self.coord_table.setRowCount(len(cells))
 
         for i, cell in enumerate(cells):
             b = cell["bbox"]
             self.coord_table.setItem(i, 0, QTableWidgetItem(str(i)))
             self.coord_table.setItem(i, 1, QTableWidgetItem(f"[{b[0]}, {b[1]}, {b[2]}, {b[3]}]"))
-            self.coord_table.setItem(i, 2, QTableWidgetItem(f"{cell['start_row']}–>{cell['end_row']}"))
-            self.coord_table.setItem(i, 3, QTableWidgetItem(f"{cell['start_col']}–>{cell['end_col']}"))
+            self.coord_table.setItem(i, 2, QTableWidgetItem(
+                f"{cell['position'][0]}–>{cell['position'][0] + cell['position'][2] - 1}"))
+            self.coord_table.setItem(i, 3, QTableWidgetItem(
+                f"{cell['position'][1]}–>{cell['position'][1] + cell['position'][3] - 1}"))
 
         self.coord_table.resizeRowsToContents()
 
@@ -538,10 +544,7 @@ class MainWindow(QMainWindow):
         if 0 <= index < self.coord_table.rowCount():
             self.coord_table.selectRow(index)
 
-        self.current_cell = self.table_editor.get_all_cells()[index]
-
-    def on_table_item_clicked(self, row, _):
-        self.table_editor.select_cell(row)
+        self.current_cell = self.table_editor.table.get_all_cells()[index]
 
     def on_file_selection_changed(self, current_row):
         if current_row < 0:
@@ -606,14 +609,12 @@ class MainWindow(QMainWindow):
         if self.image_folder and os.path.isdir(self.image_folder):
             self.load_image_list()
 
-            # restore checked state
             for fname in checked_files:
                 if fname in self.file_status:
                     self.file_status[fname] = FILE_CHECKED
 
             self.update_file_status()
 
-            # auto select first unchecked or first file
             for row in range(self.file_table.rowCount()):
                 fname = self.file_table.item(row, 1).text()
                 if self.file_status.get(fname) != FILE_CHECKED:
