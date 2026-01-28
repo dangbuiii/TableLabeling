@@ -1,6 +1,35 @@
 import sys
 import os
 import json
+import subprocess
+import platform
+
+def open_current_image_in_os(self):
+    if not self.current_image_name:
+        QMessageBox.warning(self, "Warning", "No image selected.")
+        return
+
+    image_path = os.path.join(self.image_folder, self.current_image_name)
+
+    if not os.path.exists(image_path):
+        QMessageBox.warning(self, "Warning", "Image file not found.")
+        return
+
+    system = platform.system()
+
+    try:
+        if system == "Windows":
+            os.startfile(image_path)
+
+        elif system == "Darwin":  # macOS
+            subprocess.Popen(["open", image_path])
+
+        else:  # Linux
+            subprocess.Popen(["xdg-open", image_path])
+
+    except Exception as e:
+        QMessageBox.critical(self, "Error", f"Failed to open image:\n{e}")
+
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QKeySequence, QFont
@@ -154,9 +183,9 @@ class MainWindow(QMainWindow):
         select_label_action.triggered.connect(self.select_label_folder)
         file_menu.addAction(select_label_action)
 
-        export_action = QAction("Export current table XML", self)
-        export_action.triggered.connect(self.export_table_label)
-        file_menu.addAction(export_action)
+        open_image_action = QAction("Open image in Explorer", self)
+        open_image_action.triggered.connect(self.open_current_image_in_explorer)
+        file_menu.addAction(open_image_action)
 
         tool_menu = menu_bar.addMenu("Tool")
 
@@ -623,6 +652,32 @@ class MainWindow(QMainWindow):
 
             if self.file_table.rowCount() > 0:
                 self.file_table.selectRow(0)
+
+    def open_current_image_in_explorer(self):
+        if not self.current_image_name:
+            QMessageBox.warning(self, "Warning", "No image selected.")
+            return
+
+        image_path = os.path.join(self.image_folder, self.current_image_name)
+
+        if not os.path.exists(image_path):
+            QMessageBox.warning(self, "Warning", "Image file not found.")
+            return
+
+        system = platform.system()
+
+        try:
+            if system == "Windows":
+                os.startfile(image_path)
+
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", image_path])
+
+            else:  # Linux
+                subprocess.Popen(["xdg-open", image_path])
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open image:\n{e}")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
 from PyQt5.QtWidgets import QApplication, QWidget, QMenu
 from PyQt5.QtGui import QPainter, QPen, QPixmap, QColor, QCursor
 from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
+import cv2
 
 from converter import boxes_to_voc_xml, voc_xml_to_boxes
 from table import Table
+from ocr import get_bbox
 
 
 class TableEditor(QWidget):
@@ -29,6 +31,7 @@ class TableEditor(QWidget):
         # Table
         self.table = None
         self.edit_enabled = True
+        self.hide_table = False
 
         # Mouse interaction
         self.dragging_col = None
@@ -187,6 +190,68 @@ class TableEditor(QWidget):
 
         for i in range(1, n):
             self.table.insert_col(c + i, new_w)
+
+        self.selected_cells.clear()
+        self.update()
+        self.update_cells()
+
+    def split_with_ocr(self):
+        if not self.selected_cells or not self.table:
+            return
+
+        # selected rows
+        r0, r1, c0, c1 = self.get_selected_bound()
+
+        # pixel positions
+        row_pos = [0]
+        for h in self.table.row_heights:
+            row_pos.append(row_pos[-1] + h)
+
+        col_pos = [0]
+        for w in self.table.col_widths:
+            col_pos.append(col_pos[-1] + w)
+
+        y_start = row_pos[r0]
+        y_end = row_pos[r1 + 1]
+        x_start = col_pos[c0]
+        x_end = col_pos[c1 + 1]
+
+        # load original image
+        img = cv2.imread(self.background_image_path)
+        if img is None:
+            return
+
+        crop = img[
+               int(y_start):int(y_end),
+               int(x_start):int(x_end)
+               ]
+
+        # OCR rows (already normalized)
+        rows_bbox = get_bbox(crop)
+        if not rows_bbox:
+            return
+
+        # convert to row spans
+        rows = [(ymin, ymax) for (_, ymin, _, ymax) in rows_bbox]
+        rows.sort(key=lambda x: x[0])
+
+        h = y_end - y_start
+        rows[0] = (0, rows[0][1])
+        rows[-1] = (rows[-1][0], h)
+
+        # compute heights (same as import_cells)
+        new_row_heights = [
+            rows[i + 1][0] - rows[i][0]
+            for i in range(len(rows) - 1)
+        ]
+        new_row_heights.append(rows[-1][1] - rows[-1][0])
+
+        # replace rows
+        for r in range(r1, r0 - 1, -1):
+            self.table.delete_row(r)
+
+        for i, h in enumerate(new_row_heights):
+            self.table.insert_row(r0 + i, h)
 
         self.selected_cells.clear()
         self.update()
@@ -527,6 +592,9 @@ class TableEditor(QWidget):
             else:
                 actions["Merge cols"] = menu.addAction("Merge cols")
 
+        if num_cols == 1:
+            actions["Split with OCR"] = menu.addAction("Split with OCR")
+
         global_pos = QCursor.pos()
         action = menu.exec_(global_pos)
 
@@ -539,6 +607,8 @@ class TableEditor(QWidget):
                 self.merge_selected_rows()
             elif action == actions.get("Merge cols"):
                 self.merge_selected_cols()
+            elif action == actions.get("Split with OCR"):
+                self.split_with_ocr()
 
     def leaveEvent(self, event):
         while QApplication.overrideCursor() is not None:
@@ -551,10 +621,20 @@ class TableEditor(QWidget):
             QApplication.setOverrideCursor(Qt.ArrowCursor)
             return
 
+        if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
+            self.hide_table = True
+            self.update()
+            return
+
     def keyReleaseEvent(self, event):
         if event.key() == Qt.Key_Control and not event.isAutoRepeat():
             self.edit_enabled = True
             QApplication.restoreOverrideCursor()
+            return
+
+        if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
+            self.hide_table = False
+            self.update()
             return
 
     # ----------------------- Rendering -----------------------
@@ -566,7 +646,7 @@ class TableEditor(QWidget):
         p.setRenderHint(QPainter.Antialiasing, False)
         p.drawPixmap(0, 0, self.background_pixmap)
 
-        if not self.table:
+        if not self.table or self.hide_table:
             return
 
         rows = len(self.table.row_heights)
