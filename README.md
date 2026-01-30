@@ -89,6 +89,8 @@ You can then:
 - Drag borders to adjust cell sizes
 - View updated cell details in the cell list on the right panel
 
+![demo](https://github.com/user-attachments/assets/a6651a10-8442-4f6c-a28e-b0dc3a3bb641)
+
 
 ### **4. Auto-generate table labels using TATR**
 
