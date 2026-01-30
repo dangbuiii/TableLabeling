@@ -423,6 +423,7 @@ class MainWindow(QMainWindow):
         item_name = self.file_table.item(row, 1).text()
         self.current_image_name = item_name
         self.table_editor.clear_table()
+        self.clear_cells_info()
         self.table_editor.set_image(os.path.join(self.image_folder, item_name))
         self.image_group.setTitle(item_name)
         self.current_index = row + 1
@@ -430,6 +431,10 @@ class MainWindow(QMainWindow):
         self.try_load_table_from_xml(item_name)
         self.editor_viewer.fit_editor_to_view()
         self.is_modified = False
+
+    def clear_cells_info(self):
+        self.coord_table.setRowCount(0)
+        self.current_cell = None
 
     def create_table_label(self):
         if not self.current_image_name:
