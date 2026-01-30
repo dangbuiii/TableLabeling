@@ -3,6 +3,9 @@
 **TableLabeling** is a graphical tool for creating and editing table annotations in images, developed with **Python** and **PyQt5**.
 The application helps users easily define table structures, supporting tasks such as training table structure recognition models.
 
+<img width="1919" height="1004" alt="tool" src="https://github.com/user-attachments/assets/cd53b1f3-9565-4b22-a8ed-2ab0c1ed441e" />
+
+
 ## 🛠️ Installation and Run
 
 You can install and run the application with the following steps:
