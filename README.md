@@ -15,7 +15,7 @@ You can install and run the application with the following steps:
    * Clone:
 
      ```bash
-     git clone https://github.com/your_username/TableLabeling.git
+     git clone https://github.com/dangbuiii/TableLabeling.git
      ```
    * Or download the `.zip` file from GitHub and extract it.
 
