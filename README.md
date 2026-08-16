@@ -1,17 +1,20 @@
-# 🧾 TableLabelingV2.0
+# About TableLabeling
 
-**TableLabeling** is a graphical tool for creating and editing table annotations in images, developed with **Python** and **PyQt5**.
-The application helps users easily define table structures, supporting tasks such as training table structure recognition models.
+**TableLabeling** is a graphical tool developed with **Python** and **PyQt5** for creating and editing table annotations in images. The application helps users easily define table structures, making it particularly useful for training table structure recognition models. Notably, it features specialized capabilities to handle challenging layouts, such as **borderless tables** and complex **merged cells**.
 
 <img width="1919" height="1004" alt="tool" src="https://github.com/user-attachments/assets/cd53b1f3-9565-4b22-a8ed-2ab0c1ed441e" />
 
 
+<<<<<<< HEAD
 ## 🛠️ Installation and Run
+=======
+## Installation
+>>>>>>> ccd8f8f (Update README)
 
 You can install and run the application with the following steps:
 
-1. **Download the source code**
 
+<<<<<<< HEAD
    * Clone:
 
      ```bash
@@ -20,15 +23,18 @@ You can install and run the application with the following steps:
    * Or download the `.zip` file from GitHub and extract it.
 
 2. **Install dependencies**
+=======
+1. **Install dependencies**
+>>>>>>> ccd8f8f (Update README)
 
    ```bash
    pip install -r requirements.txt
    ```
 
-3. Download model files
+2. **Download model files**
 
 The tool works with TATR-based models (Table Transformer) for automatic table structure detection.
-The application expects the model files to be located inside the model/ directory.
+The application expects the model files to be located inside the `model/` directory.
 
 Please download your TATR model file separately (e.g., TATR-v1.1-Fin.pth, TATR-SciTSR.pth, etc.) and place it in the model/ folder as shown below:
 
@@ -41,13 +47,13 @@ project_root/
 │   └── your_tatr_model.pth
 ```
 
-4. **Run the application**
+3. **Run the application**
 
    ```bash
    python main.py
    ```
 
-## 📌 Usage Guide
+## Usage
 
 ### **1. Select folders**
 
@@ -96,6 +102,10 @@ You can then:
 
 The application can automatically generate table annotations using TATR-based models.
 
+![demo](./gif/Recording%202026-08-16%20111442.gif)
+
+*Note: The examples provided use our fine-tuned model rather than the original TATR model.*
+
 #### **Option A — Auto-create for the current image**
 
 - Click **Auto Create table label**  
@@ -106,25 +116,13 @@ The application can automatically generate table annotations using TATR-based mo
 
 The dialog will automatically close when processing is complete.
 
-## 📂 Project Structure
 
-```
-TableLabeling/
-├── main.py
-├── table_editor.py
-├── auto_labeling.py
-├── model/
-│   └── <your_model_files>.pth
-├── requirements.txt
-├── README.md
-```
-
-
-## 🤝 Contribution
+## Contribution
 
 Pull requests and improvements are welcome!
-Please open an issue before submitting major changes.
+Please send a pull request.
 
 
-## 📄 License
-
+## License
+[LICENSE](./LICENSE.txt)
+Citation: Hong Quan Pham, Hai Dang Bui. TableLabeling. Git code (2026). https://github.com/dangbuiii/TableLabeling
