@@ -111,4 +111,5 @@ Please send a pull request.
 ## License
 [LICENSE](./LICENSE.txt)
 
+
 Citation: Hong Quan Pham, Hai Dang Bui. TableLabeling. Git code (2026). https://github.com/dangbuiii/TableLabeling
