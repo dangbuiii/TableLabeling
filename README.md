@@ -4,6 +4,13 @@
 
 <img width="1919" height="1004" alt="tool" src="https://github.com/user-attachments/assets/cd53b1f3-9565-4b22-a8ed-2ab0c1ed441e" />
 
+## Recent Update
+
+- 2026.07: Our public VietFinTab dataset includes over 10,000 labeled table images from the financial reports of 13 Vietnamese companies. All data were annotated using the TableLabeling tool.
+
+
+   VietFinTab dataset: https://huggingface.co/datasets/VietFinTabGroup/VietFinTab
+
 
 ## Installation
 
