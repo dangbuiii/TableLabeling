@@ -3,6 +3,9 @@
 **TableLabeling** is a graphical tool for creating and editing table annotations in images, developed with **Python** and **PyQt5**.
 The application helps users easily define table structures, supporting tasks such as training table structure recognition models.
 
+<img width="1919" height="1004" alt="tool" src="https://github.com/user-attachments/assets/cd53b1f3-9565-4b22-a8ed-2ab0c1ed441e" />
+
+
 ## 🛠️ Installation and Run
 
 You can install and run the application with the following steps:
@@ -12,7 +15,7 @@ You can install and run the application with the following steps:
    * Clone:
 
      ```bash
-     git clone https://github.com/your_username/TableLabeling.git
+     git clone https://github.com/dangbuiii/TableLabeling.git
      ```
    * Or download the `.zip` file from GitHub and extract it.
 
@@ -85,6 +88,8 @@ You can then:
 - **Merge / Unmerge** cells
 - Drag borders to adjust cell sizes
 - View updated cell details in the cell list on the right panel
+
+![demo](https://github.com/user-attachments/assets/a6651a10-8442-4f6c-a28e-b0dc3a3bb641)
 
 
 ### **4. Auto-generate table labels using TATR**

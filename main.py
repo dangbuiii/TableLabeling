@@ -1,17 +1,52 @@
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QFileDialog, QGroupBox, QAction, QPushButton, QMessageBox, QInputDialog,
-    QTextEdit, QTableWidget, QAbstractItemView, QTableWidgetItem, QHeaderView,
-    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget, QSizePolicy,
-    QDialog, QVBoxLayout, QLabel, QProgressBar
-)
-
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from table_editor import TableEditor
-from auto_labeling import process_single_image, process_folder
 import sys
 import os
+import json
+import subprocess
+import platform
+
+def open_current_image_in_os(self):
+    if not self.current_image_name:
+        QMessageBox.warning(self, "Warning", "No image selected.")
+        return
+
+    image_path = os.path.join(self.image_folder, self.current_image_name)
+
+    if not os.path.exists(image_path):
+        QMessageBox.warning(self, "Warning", "Image file not found.")
+        return
+
+    system = platform.system()
+
+    try:
+        if system == "Windows":
+            os.startfile(image_path)
+
+        elif system == "Darwin":  # macOS
+            subprocess.Popen(["open", image_path])
+
+        else:  # Linux
+            subprocess.Popen(["xdg-open", image_path])
+
+    except Exception as e:
+        QMessageBox.critical(self, "Error", f"Failed to open image:\n{e}")
+
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QKeySequence, QFont
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget,
+    QVBoxLayout, QHBoxLayout, QGridLayout,
+    QFileDialog, QGroupBox, QAction,
+    QPushButton, QMessageBox, QInputDialog,
+    QTableWidget, QTableWidgetItem,
+    QAbstractItemView, QHeaderView,
+    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget,
+    QSizePolicy, QDialog, QLabel, QProgressBar,
+    QTextEdit, QShortcut
+)
+
+from table_editor import TableEditor
+from table_struture_rec import table_structure_recognize
 
 FILE_MISSING = "missing"
 FILE_UNCHECKED = "unchecked"
@@ -22,6 +57,9 @@ STATUS_ICONS = {
     FILE_UNCHECKED: "⚠️",
     FILE_CHECKED: "✅"
 }
+
+STATE_FILE = "workspace_state.json"
+
 
 class ProcessDialog(QDialog):
     def __init__(self, parent=None, total=0):
@@ -39,8 +77,9 @@ class ProcessDialog(QDialog):
         layout.addWidget(self.progress)
         self.setLayout(layout)
 
-class FolderProcessWorker(QThread):
-    progress = pyqtSignal(int, str)   # (current_index, filename)
+
+class ProcessWorker(QThread):
+    progress = pyqtSignal(int, str)
     finished = pyqtSignal()
 
     def __init__(self, image_folder, label_folder):
@@ -61,10 +100,10 @@ class FolderProcessWorker(QThread):
             img_path = os.path.join(self.image_folder, filename)
             self.progress.emit(i + 1, filename)
 
-            # Call your existing function
-            process_single_image(img_path, self.label_folder)
+            table_structure_recognize(img_path, self.label_folder)
 
         self.finished.emit()
+
 
 class EditorViewer(QGraphicsView):
     def __init__(self, editor_widget):
@@ -99,14 +138,26 @@ class EditorViewer(QGraphicsView):
 
     def scale_view(self, factor):
         self.scale_factor *= factor
-
-        self.table_editor.parent_scale_factor *= factor
         self.scale(factor, factor)
 
     def fit_editor_to_view(self):
-        if self.proxy:
-            self.fitInView(self.proxy, Qt.KeepAspectRatio)
-            self.scale_factor = 1.0
+        if not self.proxy:
+            return
+
+        rect = self.proxy.boundingRect()
+
+        PADDING = 20
+
+        padded_rect = rect.adjusted(
+            -PADDING, -PADDING,
+            PADDING, PADDING
+        )
+
+        self.scene.setSceneRect(padded_rect)
+
+        self.fitInView(padded_rect, Qt.KeepAspectRatio)
+
+        self.scale_factor = 1.0
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -118,6 +169,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Table Labeling Tool")
         self.resize(1400, 800)
+        self._init_shortcuts()
 
         # ---- Menu ----
         menu_bar = self.menuBar()
@@ -131,9 +183,9 @@ class MainWindow(QMainWindow):
         select_label_action.triggered.connect(self.select_label_folder)
         file_menu.addAction(select_label_action)
 
-        export_action = QAction("Export current table XML", self)
-        export_action.triggered.connect(self.export_table_label)
-        file_menu.addAction(export_action)
+        open_image_action = QAction("Open image in Explorer", self)
+        open_image_action.triggered.connect(self.open_current_image_in_explorer)
+        file_menu.addAction(open_image_action)
 
         tool_menu = menu_bar.addMenu("Tool")
 
@@ -183,7 +235,7 @@ class MainWindow(QMainWindow):
         image_layout.setSpacing(0)
 
         self.table_editor = TableEditor()
-        # TableEditor must implement import_cells_xml / export_cells_xml
+        # TableEditor
         self.table_editor.cellsChanged.connect(self.update_cells_info)
         self.table_editor.cellSelected.connect(self.on_cell_selected)
 
@@ -228,7 +280,7 @@ class MainWindow(QMainWindow):
         btn_next.clicked.connect(self.save_and_next)
         btn_save.clicked.connect(self.export_table_label)
 
-        # --- Bảng thông tin ô ---
+        # --- Cells list ---
         self.coord_table = QTableWidget()
         self.coord_table.setColumnCount(4)
         self.coord_table.setHorizontalHeaderLabels(["Id", "BBox", "Rows", "Cols"])
@@ -244,11 +296,10 @@ class MainWindow(QMainWindow):
         header.resizeSection(3, 59)
 
         self.coord_table.verticalHeader().setVisible(False)
-        self.coord_table.cellClicked.connect(self.on_table_item_clicked)
 
         right_layout.addWidget(self.coord_table)
 
-        # (c) Cell Content
+        # (c) Empty
         content_group = QGroupBox("Empty panel")
         content_group.setFixedWidth(290)
         content_layout = QVBoxLayout(content_group)
@@ -267,6 +318,21 @@ class MainWindow(QMainWindow):
         self.current_cell = None
         self.file_status = {}
         self.is_modified = False
+
+        self.load_workspace_state()
+
+    def _init_shortcuts(self):
+        shortcuts = [
+            (QKeySequence("Ctrl+S"), self.export_table_label),
+            (QKeySequence("Ctrl+N"), self.save_and_next),
+            (QKeySequence(Qt.Key_Down), self.next_image),
+            (QKeySequence(Qt.Key_Up), self.prev_image),
+        ]
+
+        for key, handler in shortcuts:
+            sc = QShortcut(key, self)
+            sc.setContext(Qt.ApplicationShortcut)
+            sc.activated.connect(handler)
 
     # === Load / Save / Control ==========
     def select_image_folder(self):
@@ -357,6 +423,7 @@ class MainWindow(QMainWindow):
         item_name = self.file_table.item(row, 1).text()
         self.current_image_name = item_name
         self.table_editor.clear_table()
+        self.clear_cells_info()
         self.table_editor.set_image(os.path.join(self.image_folder, item_name))
         self.image_group.setTitle(item_name)
         self.current_index = row + 1
@@ -364,6 +431,10 @@ class MainWindow(QMainWindow):
         self.try_load_table_from_xml(item_name)
         self.editor_viewer.fit_editor_to_view()
         self.is_modified = False
+
+    def clear_cells_info(self):
+        self.coord_table.setRowCount(0)
+        self.current_cell = None
 
     def create_table_label(self):
         if not self.current_image_name:
@@ -387,7 +458,7 @@ class MainWindow(QMainWindow):
         image_path = os.path.join(self.image_folder, self.current_image_name)
 
         try:
-            process_single_image(image_path, self.label_folder)
+            table_structure_recognize(image_path, self.label_folder)
             self.table_editor.clear_table()
             self.try_load_table_from_xml(self.current_image_name)
 
@@ -404,24 +475,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please select a label folder first.")
             return
 
-        # Lấy danh sách file để xác định tổng số lượng
         files = [
             f for f in os.listdir(self.image_folder)
             if f.lower().endswith(('.png', '.jpg', '.jpeg'))
         ]
 
-        # Tạo dialog hiển thị tiến trình
         self.process_dialog = ProcessDialog(self, total=len(files))
         self.process_dialog.show()
 
-        # Tạo worker chạy thread
-        self.worker = FolderProcessWorker(self.image_folder, self.label_folder)
+        self.worker = ProcessWorker(self.image_folder, self.label_folder)
 
-        # Kết nối tín hiệu
         self.worker.progress.connect(self.on_process_progress)
         self.worker.finished.connect(self.on_process_finished)
 
-        # Bắt đầu chạy
         self.worker.start()
 
     def on_process_progress(self, value, filename):
@@ -432,6 +498,7 @@ class MainWindow(QMainWindow):
         self.process_dialog.close()
         # Reload file list status icon
         self.update_file_status()
+        self.save_workspace_state()
 
     def try_load_table_from_xml(self, image_name):
         if not self.label_folder:
@@ -440,7 +507,6 @@ class MainWindow(QMainWindow):
         xml_path = os.path.join(self.label_folder, xml_name)
         if os.path.exists(xml_path):
             try:
-                # TableEditor must provide import_cells_xml(filename)
                 self.table_editor.import_cells(xml_path)
                 return True
             except Exception as e:
@@ -457,11 +523,11 @@ class MainWindow(QMainWindow):
         base_name = os.path.splitext(self.current_image_name)[0]
         file_path = os.path.join(self.label_folder, f"{base_name}.xml")
         try:
-            # TableEditor must provide export_cells_xml(filename)
             self.table_editor.export_cells(file_path)
             self.is_modified = False
 
             self.file_status[self.current_image_name] = FILE_CHECKED
+            self.save_workspace_state()
 
             for row in range(self.file_table.rowCount()):
                 fname_item = self.file_table.item(row, 1)
@@ -494,15 +560,17 @@ class MainWindow(QMainWindow):
 
     def update_cells_info(self):
         self.is_modified = True
-        cells = self.table_editor.get_all_cells()
+        cells = self.table_editor.table.get_all_cells()
         self.coord_table.setRowCount(len(cells))
 
         for i, cell in enumerate(cells):
             b = cell["bbox"]
             self.coord_table.setItem(i, 0, QTableWidgetItem(str(i)))
             self.coord_table.setItem(i, 1, QTableWidgetItem(f"[{b[0]}, {b[1]}, {b[2]}, {b[3]}]"))
-            self.coord_table.setItem(i, 2, QTableWidgetItem(f"{cell['start_row']}–>{cell['end_row']}"))
-            self.coord_table.setItem(i, 3, QTableWidgetItem(f"{cell['start_col']}–>{cell['end_col']}"))
+            self.coord_table.setItem(i, 2, QTableWidgetItem(
+                f"{cell['position'][0]}–>{cell['position'][0] + cell['position'][2] - 1}"))
+            self.coord_table.setItem(i, 3, QTableWidgetItem(
+                f"{cell['position'][1]}–>{cell['position'][1] + cell['position'][3] - 1}"))
 
         self.coord_table.resizeRowsToContents()
 
@@ -510,15 +578,111 @@ class MainWindow(QMainWindow):
         if 0 <= index < self.coord_table.rowCount():
             self.coord_table.selectRow(index)
 
-        self.current_cell = self.table_editor.get_all_cells()[index]
-
-    def on_table_item_clicked(self, row, _):
-        self.table_editor.select_cell(row)
+        self.current_cell = self.table_editor.table.get_all_cells()[index]
 
     def on_file_selection_changed(self, current_row):
         if current_row < 0:
             return
         self.on_file_table_clicked(current_row, 0)
+
+    def next_image(self):
+        if self.file_table.rowCount() == 0:
+            return
+
+        current_row = self.file_table.currentRow()
+        if current_row < 0:
+            return
+
+        next_row = current_row + 1
+        if next_row >= self.file_table.rowCount():
+            QMessageBox.information(self, "Done", "No more images.")
+            return
+
+        self.file_table.selectRow(next_row)
+
+    def prev_image(self):
+        if self.file_table.rowCount() == 0:
+            return
+
+        current_row = self.file_table.currentRow()
+        if current_row <= 0:
+            return
+
+        self.file_table.selectRow(current_row - 1)
+
+    def save_workspace_state(self):
+        state = {
+            "image_folder": self.image_folder,
+            "label_folder": self.label_folder,
+            "checked_files": [
+                fname for fname, status in self.file_status.items()
+                if status == FILE_CHECKED
+            ]
+        }
+
+        try:
+            with open(STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print("Failed to save workspace state:", e)
+
+    def load_workspace_state(self):
+        if not os.path.exists(STATE_FILE):
+            return
+
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            return
+
+        self.image_folder = state.get("image_folder", "")
+        self.label_folder = state.get("label_folder", "")
+        checked_files = set(state.get("checked_files", []))
+
+        if self.image_folder and os.path.isdir(self.image_folder):
+            self.load_image_list()
+
+            for fname in checked_files:
+                if fname in self.file_status:
+                    self.file_status[fname] = FILE_CHECKED
+
+            self.update_file_status()
+
+            for row in range(self.file_table.rowCount()):
+                fname = self.file_table.item(row, 1).text()
+                if self.file_status.get(fname) != FILE_CHECKED:
+                    self.file_table.selectRow(row)
+                    return
+
+            if self.file_table.rowCount() > 0:
+                self.file_table.selectRow(0)
+
+    def open_current_image_in_explorer(self):
+        if not self.current_image_name:
+            QMessageBox.warning(self, "Warning", "No image selected.")
+            return
+
+        image_path = os.path.join(self.image_folder, self.current_image_name)
+
+        if not os.path.exists(image_path):
+            QMessageBox.warning(self, "Warning", "Image file not found.")
+            return
+
+        system = platform.system()
+
+        try:
+            if system == "Windows":
+                os.startfile(image_path)
+
+            elif system == "Darwin":  # macOS
+                subprocess.Popen(["open", image_path])
+
+            else:  # Linux
+                subprocess.Popen(["xdg-open", image_path])
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open image:\n{e}")
 
 
 if __name__ == "__main__":
