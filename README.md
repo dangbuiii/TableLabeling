@@ -5,27 +5,12 @@
 <img width="1919" height="1004" alt="tool" src="https://github.com/user-attachments/assets/cd53b1f3-9565-4b22-a8ed-2ab0c1ed441e" />
 
 
-<<<<<<< HEAD
-## 🛠️ Installation and Run
-=======
 ## Installation
->>>>>>> ccd8f8f (Update README)
 
 You can install and run the application with the following steps:
 
 
-<<<<<<< HEAD
-   * Clone:
-
-     ```bash
-     git clone https://github.com/dangbuiii/TableLabeling.git
-     ```
-   * Or download the `.zip` file from GitHub and extract it.
-
-2. **Install dependencies**
-=======
 1. **Install dependencies**
->>>>>>> ccd8f8f (Update README)
 
    ```bash
    pip install -r requirements.txt
